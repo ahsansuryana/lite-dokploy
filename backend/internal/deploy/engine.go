@@ -186,17 +186,21 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.File) {
 	data, err := os.ReadFile(composePath)
 	if err != nil {
+		fmt.Fprintf(logFile, "Volume mount dirs: read error: %v\n", err)
 		return
 	}
+	fmt.Fprintf(logFile, "Volume mount dirs: checking compose file (%d bytes)...\n", len(data))
 	var parsed map[string]interface{}
 	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		fmt.Fprintf(logFile, "Volume mount dirs: yaml error: %v\n", err)
 		return
 	}
 	services, ok := parsed["services"].(map[string]interface{})
 	if !ok {
+		fmt.Fprintf(logFile, "Volume mount dirs: no services found\n")
 		return
 	}
-	for _, svcRaw := range services {
+	for svcName, svcRaw := range services {
 		svc, ok := svcRaw.(map[string]interface{})
 		if !ok {
 			continue
@@ -207,11 +211,14 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 		}
 		vols, ok := volsRaw.([]interface{})
 		if !ok {
+			fmt.Fprintf(logFile, "Volume mount dirs: service %s volumes not a list\n", svcName)
 			continue
 		}
+		fmt.Fprintf(logFile, "Volume mount dirs: service %s has %d volume(s)\n", svcName, len(vols))
 		for _, v := range vols {
 			vStr, ok := v.(string)
 			if !ok {
+				fmt.Fprintf(logFile, "Volume mount dirs: volume entry not a string: %T\n", v)
 				continue
 			}
 			parts := strings.SplitN(vStr, ":", 2)
@@ -238,12 +245,14 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 						f.WriteString("events {}\nhttp {\n    server {\n        listen 80;\n    }\n}\n")
 					}
 					f.Close()
+					fmt.Fprintf(logFile, "Volume mount dirs: created file %s\n", hostPath)
 				}
 			} else if err == nil && info.IsDir() {
 				os.MkdirAll(fullPath, 0755)
 			}
 		}
 	}
+	fmt.Fprintf(logFile, "Volume mount dirs: done\n")
 }
 
 func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
