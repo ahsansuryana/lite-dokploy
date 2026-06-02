@@ -196,7 +196,7 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 	if !ok {
 		return
 	}
-	for svcName, svcRaw := range services {
+	for _, svcRaw := range services {
 		svc, ok := svcRaw.(map[string]interface{})
 		if !ok {
 			continue
