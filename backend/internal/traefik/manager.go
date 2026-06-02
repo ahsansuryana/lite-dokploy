@@ -64,11 +64,15 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 			continue
 		}
 
-		labels := m.buildLabels(d, appName, i)
+		newLabels := m.buildLabels(d, appName, i)
 		if existing, ok := svcMap["labels"].([]interface{}); ok {
-			labels = append(existing, labels...)
+			for _, l := range existing {
+				if s, ok := l.(string); ok {
+					newLabels = append(newLabels, s)
+				}
+			}
 		}
-		svcMap["labels"] = labels
+		svcMap["labels"] = newLabels
 	}
 
 	out, err := yaml.Marshal(compose)
