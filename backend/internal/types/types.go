@@ -70,11 +70,13 @@ type CreateAppRequest struct {
 }
 
 type UpdateAppRequest struct {
-	Name        string `json:"name"`
-	RepoURL     string `json:"repoUrl"`
-	Branch      string `json:"branch"`
-	ComposePath string `json:"composePath"`
-	EnvVars     string `json:"envVars"`
+	Name           string `json:"name"`
+	RepoURL        string `json:"repoUrl"`
+	Branch         string `json:"branch"`
+	ComposePath    string `json:"composePath"`
+	ComposeContent string `json:"composeContent"`
+	EnvVars        string `json:"envVars"`
+	Source         string `json:"source"`
 }
 
 type CreateDomainRequest struct {

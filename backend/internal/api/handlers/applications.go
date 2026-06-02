@@ -113,6 +113,9 @@ func UpdateApp(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" {
 		app.Name = req.Name
 	}
+	if req.Source != "" {
+		app.Source = req.Source
+	}
 	if req.RepoURL != "" {
 		app.RepoURL = req.RepoURL
 	}
@@ -121,6 +124,9 @@ func UpdateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ComposePath != "" {
 		app.ComposePath = req.ComposePath
+	}
+	if req.ComposeContent != "" {
+		app.ComposeContent = req.ComposeContent
 	}
 	app.EnvVars = req.EnvVars
 
