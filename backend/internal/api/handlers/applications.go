@@ -114,7 +114,7 @@ func UpdateApp(w http.ResponseWriter, r *http.Request) {
 		app.Name = req.Name
 	}
 	if req.Source != "" {
-		app.Source = req.Source
+		app.Source = types.AppSource(req.Source)
 	}
 	if req.RepoURL != "" {
 		app.RepoURL = req.RepoURL
