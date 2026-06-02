@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { navigate, Link } from '../router'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Separator } from '../components/ui/separator'
+import { ArrowLeft, Plus } from 'lucide-react'
 
 export function CreateApp() {
   const [form, setForm] = useState({
@@ -32,95 +36,117 @@ export function CreateApp() {
     setForm((f) => ({ ...f, [field]: value }))
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
-        <Link href="/" className="text-gray-500 hover:text-gray-300 text-sm">
-          &larr; Back to Dashboard
-        </Link>
+    <Card className="h-full bg-sidebar p-2.5 rounded-xl">
+      <div className="rounded-xl bg-background shadow-md">
+        <CardHeader className="py-4 px-6">
+          <Link href="/" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground no-underline mb-2">
+            <ArrowLeft size={14} />
+            Back to Dashboard
+          </Link>
+          <CardTitle className="text-xl">New Application</CardTitle>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Configure a new Git-based application deployment.
+          </p>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-6 max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <input
+                required
+                value={form.name}
+                onChange={(e) => update('name', e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                placeholder="my-app"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                Git Repository URL <span className="text-destructive">*</span>
+              </label>
+              <input
+                required
+                value={form.repoUrl}
+                onChange={(e) => update('repoUrl', e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                placeholder="https://github.com/user/repo.git"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Branch</label>
+                <input
+                  value={form.branch}
+                  onChange={(e) => update('branch', e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Compose Path</label>
+                <input
+                  value={form.composePath}
+                  onChange={(e) => update('composePath', e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Domain</label>
+              <input
+                value={form.domain}
+                onChange={(e) => update('domain', e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                placeholder="app.example.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                Environment Variables
+                <span className="text-muted-foreground font-normal ml-2">(KEY=value per line)</span>
+              </label>
+              <textarea
+                value={form.envVars}
+                onChange={(e) => update('envVars', e.target.value)}
+                rows={6}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+                placeholder="DATABASE_URL=postgres://..."
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin inline-block size-4 border-2 border-current border-t-transparent rounded-full" />
+                    Creating...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Plus size={16} />
+                    Create Application
+                  </span>
+                )}
+              </Button>
+              <Link href="/">
+                <Button type="button" variant="outline">Cancel</Button>
+              </Link>
+            </div>
+          </form>
+        </CardContent>
       </div>
-
-      <h1 className="text-2xl font-bold mb-6">New Application</h1>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Name *</label>
-          <input
-            required
-            value={form.name}
-            onChange={(e) => update('name', e.target.value)}
-            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-            placeholder="my-app"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Git Repository URL *</label>
-          <input
-            required
-            value={form.repoUrl}
-            onChange={(e) => update('repoUrl', e.target.value)}
-            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-            placeholder="https://github.com/user/repo.git"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Branch</label>
-            <input
-              value={form.branch}
-              onChange={(e) => update('branch', e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Compose Path</label>
-            <input
-              value={form.composePath}
-              onChange={(e) => update('composePath', e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">Domain</label>
-          <input
-            value={form.domain}
-            onChange={(e) => update('domain', e.target.value)}
-            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-            placeholder="app.example.com"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-400 mb-1">
-            Environment Variables
-            <span className="text-gray-600 font-normal ml-2">(KEY=value per line)</span>
-          </label>
-          <textarea
-            value={form.envVars}
-            onChange={(e) => update('envVars', e.target.value)}
-            rows={6}
-            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors font-mono"
-            placeholder="DATABASE_URL=postgres://..."
-          />
-        </div>
-
-        {error && (
-          <div className="bg-red-900/50 border border-red-700 rounded px-4 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded text-sm font-medium transition-colors"
-        >
-          {saving ? 'Creating...' : 'Create Application'}
-        </button>
-      </form>
-    </div>
+    </Card>
   )
 }
