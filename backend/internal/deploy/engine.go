@@ -247,6 +247,17 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 					f.Close()
 					fmt.Fprintf(logFile, "Volume mount dirs: created file %s\n", hostPath)
 				}
+			} else if err == nil && info.Size() == 0 {
+				f, err := os.Create(fullPath)
+				if err != nil {
+					fmt.Fprintf(logFile, "Warning: could not recreate file for volume mount %s: %v\n", hostPath, err)
+				} else {
+					if strings.HasSuffix(hostPath, "nginx.conf") {
+						f.WriteString("events {}\nhttp {\n    server {\n        listen 80;\n    }\n}\n")
+					}
+					f.Close()
+					fmt.Fprintf(logFile, "Volume mount dirs: recreated file %s\n", hostPath)
+				}
 			} else if err == nil && info.IsDir() {
 				os.MkdirAll(fullPath, 0755)
 			}
