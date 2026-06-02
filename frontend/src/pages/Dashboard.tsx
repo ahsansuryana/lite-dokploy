@@ -11,7 +11,7 @@ export function Dashboard() {
   const load = () => {
     setLoading(true)
     api.dashboard()
-      .then((res) => setData(res.applications))
+      .then((res) => setData(res.applications || []))
       .catch(console.error)
       .finally(() => setLoading(false))
   }

@@ -87,7 +87,7 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		Applications []DashboardItem `json:"applications"`
 	}
 
-	var resp response
+	resp := response{Applications: make([]DashboardItem, 0, len(apps))}
 	for _, app := range apps {
 		item := DashboardItem{Application: app}
 		dep, _ := models.GetLatestDeployment(app.ID)
