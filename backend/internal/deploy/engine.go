@@ -234,6 +234,9 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 				if err != nil {
 					fmt.Fprintf(logFile, "Warning: could not create file for volume mount %s: %v\n", hostPath, err)
 				} else {
+					if strings.HasSuffix(hostPath, "nginx.conf") {
+						f.WriteString("events {}\nhttp {\n    server {\n        listen 80;\n    }\n}\n")
+					}
 					f.Close()
 				}
 			} else if err == nil && info.IsDir() {
