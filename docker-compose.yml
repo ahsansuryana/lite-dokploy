@@ -1,0 +1,77 @@
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: lite-dokploy-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=lite-dokploy-network
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=admin@example.com
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    networks:
+      - lite-dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_USER:-admin}:${TRAEFIK_PASSWORD_HASH:-}"
+
+  lite-dokploy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lite-dokploy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - TRAEFIK_ENABLED=true
+      - DOMAIN=${DOMAIN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - lite-dokploy-data:/data
+      - lite-dokploy-repos:/repositories
+      - lite-dokploy-logs:/logs
+      - lite-dokploy-deployments:/deployments
+    networks:
+      - lite-dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lite-dokploy.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.lite-dokploy.entrypoints=websecure"
+      - "traefik.http.routers.lite-dokploy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.lite-dokploy.loadbalancer.server.port=3000"
+    depends_on:
+      - traefik
+
+networks:
+  lite-dokploy-network:
+    name: lite-dokploy-network
+    driver: bridge
+
+volumes:
+  lite-dokploy-data:
+    driver: local
+  lite-dokploy-repos:
+    driver: local
+  lite-dokploy-logs:
+    driver: local
+  lite-dokploy-deployments:
+    driver: local
+  traefik-letsencrypt:
+    driver: local
