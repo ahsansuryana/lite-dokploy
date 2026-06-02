@@ -54,8 +54,8 @@ func CreateApplication(a *types.Application) error {
 
 func UpdateApplication(a *types.Application) error {
 	_, err := database.DB.Exec(`
-		UPDATE applications SET name=?, repo_url=?, branch=?, compose_path=?, compose_content=?, env_vars=?, status=?, updated_at=? WHERE id=?
-	`, a.Name, a.RepoURL, a.Branch, a.ComposePath, a.ComposeContent, a.EnvVars, a.Status, time.Now(), a.ID)
+		UPDATE applications SET name=?, repo_url=?, branch=?, compose_path=?, compose_content=?, source=?, env_vars=?, status=?, updated_at=? WHERE id=?
+	`, a.Name, a.RepoURL, a.Branch, a.ComposePath, a.ComposeContent, a.Source, a.EnvVars, a.Status, time.Now(), a.ID)
 	return err
 }
 
