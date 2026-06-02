@@ -3,7 +3,6 @@ package traefik
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/lite-dokploy/backend/internal/types"
 	"gopkg.in/yaml.v3"
@@ -35,11 +34,12 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 	if !ok {
 		return composeBytes, nil
 	}
-
 	servicesMap, ok := servicesRaw.(map[string]interface{})
 	if !ok {
 		return composeBytes, nil
 	}
+
+	m.ensureTraefikNetwork(compose)
 
 	for i, d := range domains {
 		targetService := d.ServiceName
@@ -59,22 +59,16 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 			log.Printf("domain[%d]: service %q not found in compose", i, targetService)
 			continue
 		}
-
 		svcMap, ok := svcRaw.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
 		labels := m.buildLabels(d, appName, i)
-		existingLabels, _ := svcMap["labels"].([]interface{})
-		for _, l := range existingLabels {
-			labels = append(labels, l.(string))
+		if existing, ok := svcMap["labels"].([]interface{}); ok {
+			labels = append(existing, labels...)
 		}
 		svcMap["labels"] = labels
-
-		if !m.hasNetwork(compose, "traefik") {
-			m.ensureNetwork(compose)
-		}
 	}
 
 	out, err := yaml.Marshal(compose)
@@ -85,11 +79,24 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 	return out, nil
 }
 
+func (m *Manager) ensureTraefikNetwork(compose map[string]interface{}) {
+	existing := map[string]interface{}{}
+	if raw, ok := compose["networks"]; ok {
+		if m, ok := raw.(map[string]interface{}); ok {
+			existing = m
+		}
+	}
+	if _, ok := existing["traefik"]; !ok {
+		existing["traefik"] = map[string]interface{}{
+			"external": true,
+		}
+	}
+	compose["networks"] = existing
+}
+
 func (m *Manager) buildLabels(d types.AppDomain, appName string, idx int) []string {
 	host := d.Host
-	labels := []string{
-		"traefik.enable=true",
-	}
+	labels := []string{"traefik.enable=true"}
 
 	entrypointWeb := fmt.Sprintf("%s-web-%d", appName, idx)
 	entrypointSecure := fmt.Sprintf("%s-websecure-%d", appName, idx)
@@ -114,7 +121,6 @@ func (m *Manager) buildLabels(d types.AppDomain, appName string, idx int) []stri
 			fmt.Sprintf("traefik.http.routers.%s.tls.certresolver=letsencrypt", entrypointSecure),
 			fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%d", entrypointSecure, d.Port),
 		)
-
 		redirectName := fmt.Sprintf("%s-redirect-%d", appName, idx)
 		labels = append(labels,
 			fmt.Sprintf("traefik.http.middlewares.%s.redirectscheme.scheme=https", redirectName),
@@ -123,91 +129,41 @@ func (m *Manager) buildLabels(d types.AppDomain, appName string, idx int) []stri
 		)
 	}
 
+	var mids []string
+
 	if d.StripPath && d.Path != "" && d.Path != "/" {
 		stripName := fmt.Sprintf("%s-stripprefix-%d", appName, idx)
 		labels = append(labels,
 			fmt.Sprintf("traefik.http.middlewares.%s.stripprefix.prefixes=%s", stripName, d.Path),
-			fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", entrypointWeb, stripName),
 		)
-		if d.HTTPS {
-			labels = append(labels,
-				fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", entrypointSecure, stripName),
-			)
-		}
+		mids = append(mids, stripName)
 	}
 
 	if d.InternalPath != "" && d.InternalPath != "/" && d.InternalPath != d.Path {
-		addPrefixName := fmt.Sprintf("%s-addprefix-%d", appName, idx)
-		middleware := fmt.Sprintf("%s-addprefix-%d", appName, idx)
+		prefixName := fmt.Sprintf("%s-addprefix-%d", appName, idx)
 		labels = append(labels,
-			fmt.Sprintf("traefik.http.middlewares.%s.addprefix.prefix=%s", addPrefixName, d.InternalPath),
+			fmt.Sprintf("traefik.http.middlewares.%s.addprefix.prefix=%s", prefixName, d.InternalPath),
 		)
+		mids = append(mids, prefixName)
+	}
 
-		existingMid := ""
-		if d.StripPath && d.Path != "" && d.Path != "/" {
-			existingMid = fmt.Sprintf("%s-stripprefix-%d,", appName, idx)
+	if len(mids) > 0 {
+		midsStr := ""
+		for i, m := range mids {
+			if i > 0 {
+				midsStr += ","
+			}
+			midsStr += m
 		}
-		labels = append(labels,
-			fmt.Sprintf("traefik.http.routers.%s.middlewares=%s%s", entrypointWeb, existingMid, middleware),
-		)
+		labels = append(labels, fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", entrypointWeb, midsStr))
 		if d.HTTPS {
-			labels = append(labels,
-				fmt.Sprintf("traefik.http.routers.%s.middlewares=%s%s", entrypointSecure, existingMid, middleware),
-			)
+			labels = append(labels, fmt.Sprintf("traefik.http.routers.%s.middlewares=%s", entrypointSecure, midsStr))
 		}
 	}
 
 	return labels
 }
 
-func (m *Manager) hasNetwork(compose map[string]interface{}, networkName string) bool {
-	networksRaw, ok := compose["networks"]
-	if !ok {
-		return false
-	}
-	networksMap, ok := networksRaw.(map[string]interface{})
-	if !ok {
-		return false
-	}
-	_, ok = networksMap[networkName]
-	return ok
-}
-
-func (m *Manager) ensureNetwork(compose map[string]interface{}) {
-	compose["networks"] = map[string]interface{}{
-		"traefik": map[string]interface{}{
-			"external": true,
-		},
-	}
-}
-
 func (m *Manager) EnsureTraefikNetwork() error {
 	return nil
-}
-
-func ensureNetworkOnService(svcMap map[string]interface{}) {
-	networksRaw, _ := svcMap["networks"]
-	switch v := networksRaw.(type) {
-	case []interface{}:
-		for _, n := range v {
-			if n == "traefik" {
-				return
-			}
-		}
-		svcMap["networks"] = append(v, "traefik")
-	case nil:
-		svcMap["networks"] = []string{"traefik"}
-	}
-}
-
-func labelExists(labels []interface{}, key string) bool {
-	prefix := key + "="
-	for _, l := range labels {
-		if s, ok := l.(string); ok {
-			if strings.HasPrefix(s, prefix) {
-				return true
-			}
-		}
-	}
-	return false
 }
