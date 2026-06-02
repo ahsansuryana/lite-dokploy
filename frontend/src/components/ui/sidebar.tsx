@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import { cn } from '../../lib/utils'
-import { Separator } from './separator'
 
 type SidebarContextType = {
   open: boolean

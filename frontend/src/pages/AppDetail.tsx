@@ -7,8 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
-import { Badge } from '../components/ui/badge'
-import { ArrowLeft, Globe, Rocket, Terminal, Copy, RefreshCw, Play, Square, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Globe, Rocket, Terminal, Copy, RefreshCw, Play, Square, RotateCcw, type LucideIcon } from 'lucide-react'
 
 export function AppDetail() {
   const path = usePath()
@@ -236,18 +235,18 @@ export function AppDetail() {
                 <Separator />
                 <CardContent className="p-4">
                   <div className="flex flex-col gap-2">
-                    {[
+                    {([
                       ['Deploy', 'deploy', () => api.deploy(appId), Rocket],
                       ['Redeploy', 'redeploy', () => api.redeploy(appId), RefreshCw],
                       ['Restart', 'restart', () => api.restart(appId), RotateCcw],
                       ['Stop', 'stop', () => api.stop(appId), Square],
                       ['Start', 'start', () => api.start(appId), Play],
-                    ].map(([label, action, fn, Icon]) => (
+                    ] as const).map(([label, action, fn, Icon]) => (
                       <Button
-                        key={action as string}
+                        key={action}
                         variant="secondary"
                         size="sm"
-                        onClick={() => doAction(action as string, fn as () => Promise<unknown>)}
+                        onClick={() => doAction(action, fn)}
                         disabled={actionLoading !== null}
                       >
                         {actionLoading === action ? (
@@ -257,8 +256,8 @@ export function AppDetail() {
                           </span>
                         ) : (
                           <span className="flex items-center gap-2">
-                            {(Icon as React.ComponentType<{ size?: number }>) && <Icon size={14} />}
-                            {label as string}
+                            <Icon size={14} />
+                            {label}
                           </span>
                         )}
                       </Button>
