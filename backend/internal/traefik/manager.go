@@ -74,6 +74,18 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 			}
 		}
 		svcMap["labels"] = newLabels
+
+		svcNetworks, _ := svcMap["networks"].([]interface{})
+		hasNetwork := false
+		for _, n := range svcNetworks {
+			if s, ok := n.(string); ok && s == "lite-dokploy-network" {
+				hasNetwork = true
+				break
+			}
+		}
+		if !hasNetwork {
+			svcMap["networks"] = append(svcNetworks, "lite-dokploy-network")
+		}
 	}
 
 	out, err := yaml.Marshal(compose)
@@ -93,8 +105,8 @@ func (m *Manager) ensureTraefikNetwork(compose map[string]interface{}) {
 			existing = m
 		}
 	}
-	if _, ok := existing["traefik"]; !ok {
-		existing["traefik"] = map[string]interface{}{
+	if _, ok := existing["lite-dokploy-network"]; !ok {
+		existing["lite-dokploy-network"] = map[string]interface{}{
 			"external": true,
 		}
 	}
