@@ -77,7 +77,7 @@ export function Dashboard() {
                           <div className="min-w-0">
                             <p className="font-medium text-sm truncate">{app.name}</p>
                             <p className="text-xs text-muted-foreground truncate mt-0.5">
-                              {app.repoUrl}
+                              {app.source === 'manual' ? 'Manual (pasted compose)' : app.repoUrl}
                             </p>
                           </div>
                         </div>

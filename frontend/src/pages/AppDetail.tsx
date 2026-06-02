@@ -105,7 +105,7 @@ export function AppDetail() {
                 {app.name}
               </CardTitle>
               <CardDescription className="mt-1">
-                {app.repoUrl} &middot; {app.branch}
+                {app.source === 'manual' ? 'Manual (pasted compose)' : `${app.repoUrl} · ${app.branch}`}
               </CardDescription>
             </div>
             <StatusBadge status={app.status} />
@@ -125,6 +125,12 @@ export function AppDetail() {
                 <CardContent className="p-4">
                   <dl className="grid grid-cols-2 gap-4 text-sm">
                     <div>
+                      <dt className="text-muted-foreground text-xs">Source</dt>
+                      <dd className="text-xs mt-0.5 capitalize">{app.source}</dd>
+                    </div>
+                    {app.source !== 'manual' && (
+                    <>
+                    <div>
                       <dt className="text-muted-foreground text-xs">Repository</dt>
                       <dd className="font-mono text-xs mt-0.5 text-foreground">{app.repoUrl}</dd>
                     </div>
@@ -132,6 +138,8 @@ export function AppDetail() {
                       <dt className="text-muted-foreground text-xs">Branch</dt>
                       <dd className="text-xs mt-0.5">{app.branch}</dd>
                     </div>
+                    </>  
+                    )}
                     <div>
                       <dt className="text-muted-foreground text-xs">Compose Path</dt>
                       <dd className="font-mono text-xs mt-0.5">{app.composePath}</dd>

@@ -4,6 +4,7 @@ export interface Application {
   repoUrl: string
   branch: string
   composePath: string
+  composeContent?: string
   domain: string
   envVars: string
   status: string

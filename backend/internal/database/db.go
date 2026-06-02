@@ -39,9 +39,10 @@ func migrate() error {
 		`CREATE TABLE IF NOT EXISTS applications (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
-			repo_url TEXT NOT NULL,
-			branch TEXT NOT NULL DEFAULT 'main',
+			repo_url TEXT NOT NULL DEFAULT '',
+			branch TEXT NOT NULL DEFAULT '',
 			compose_path TEXT NOT NULL DEFAULT 'docker-compose.yml',
+			compose_content TEXT NOT NULL DEFAULT '',
 			domain TEXT NOT NULL DEFAULT '',
 			env_vars TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'stopped',
@@ -67,6 +68,9 @@ func migrate() error {
 			return err
 		}
 	}
+
+	DB.Exec(`ALTER TABLE applications ADD COLUMN compose_content TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
 

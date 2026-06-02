@@ -30,6 +30,14 @@ func NewEngine(dm *docker.Manager, gm *git.Manager, tm *traefik.Manager) *Engine
 	}
 }
 
+func (e *Engine) workDir(app *types.Application) string {
+	return e.git.RepoPath(app.ID)
+}
+
+func (e *Engine) composeFile(app *types.Application) string {
+	return filepath.Join(e.workDir(app), app.ComposePath)
+}
+
 func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
 	dep := &types.Deployment{
 		ID:            uuid.New().String(),
@@ -59,7 +67,11 @@ func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Dep
 	models.UpdateAppStatus(app.ID, "deploying")
 
 	fmt.Fprintf(logFile, "[%s] Starting deployment for %s\n", time.Now().Format(time.RFC3339), app.Name)
-	fmt.Fprintf(logFile, "Repository: %s (branch: %s)\n", app.RepoURL, app.Branch)
+	if app.Source == types.SourceManual {
+		fmt.Fprintf(logFile, "Source: manual (pasted compose)\n")
+	} else {
+		fmt.Fprintf(logFile, "Repository: %s (branch: %s)\n", app.RepoURL, app.Branch)
+	}
 	fmt.Fprintf(logFile, "Compose file: %s\n", app.ComposePath)
 
 	if err := e.deploy(ctx, app, dep, logFile); err != nil {
@@ -79,21 +91,34 @@ func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Dep
 }
 
 func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.Deployment, logFile *os.File) error {
-	fmt.Fprintf(logFile, "[%s] Cloning repository...\n", time.Now().Format(time.RFC3339))
-	repoDir, err := e.git.Clone(app.RepoURL, app.Branch, app.ID)
-	if err != nil {
-		return fmt.Errorf("clone repo: %w", err)
-	}
-	fmt.Fprintf(logFile, "Repository cloned to %s\n", repoDir)
+	workDir := e.workDir(app)
+	os.MkdirAll(workDir, 0755)
 
-	commitSHA, commitMsg, err := e.git.GetCommitInfo(app.ID)
-	if err == nil {
-		dep.CommitSHA = commitSHA
-		dep.CommitMessage = commitMsg
-		fmt.Fprintf(logFile, "Commit: %s - %s\n", commitSHA[:8], commitMsg)
+	if app.Source == types.SourceManual {
+		composeFilePath := filepath.Join(workDir, app.ComposePath)
+		if err := os.WriteFile(composeFilePath, []byte(app.ComposeContent), 0644); err != nil {
+			return fmt.Errorf("write compose file: %w", err)
+		}
+		fmt.Fprintf(logFile, "Compose file written to %s\n", composeFilePath)
+		dep.CommitSHA = "manual"
+		dep.CommitMessage = "manual compose\n"
+	} else {
+		fmt.Fprintf(logFile, "[%s] Cloning repository...\n", time.Now().Format(time.RFC3339))
+		repoDir, err := e.git.Clone(app.RepoURL, app.Branch, app.ID)
+		if err != nil {
+			return fmt.Errorf("clone repo: %w", err)
+		}
+		fmt.Fprintf(logFile, "Repository cloned to %s\n", repoDir)
+
+		commitSHA, commitMsg, err := e.git.GetCommitInfo(app.ID)
+		if err == nil {
+			dep.CommitSHA = commitSHA
+			dep.CommitMessage = commitMsg
+			fmt.Fprintf(logFile, "Commit: %s - %s\n", commitSHA[:8], commitMsg)
+		}
 	}
 
-	envPath, err := e.docker.WriteEnvFile(repoDir, app.EnvVars)
+	envPath, err := e.docker.WriteEnvFile(workDir, app.EnvVars)
 	if err != nil {
 		return fmt.Errorf("write env file: %w", err)
 	}
@@ -103,19 +128,19 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 
 	if app.Domain != "" {
 		fmt.Fprintf(logFile, "Generating Traefik config for domain %s...\n", app.Domain)
-		if traefikErr := e.traefik.GenerateComposeSnippet(app, repoDir); traefikErr != nil {
+		if traefikErr := e.traefik.GenerateComposeSnippet(app, workDir); traefikErr != nil {
 			log.Printf("traefik config warning: %v", traefikErr)
 		}
 	}
 
-	composeFile := filepath.Join(repoDir, app.ComposePath)
+	composeFile := filepath.Join(workDir, app.ComposePath)
 	fmt.Fprintf(logFile, "Running docker compose pull...\n")
-	if err := e.docker.ComposePull(ctx, repoDir, composeFile, logFile); err != nil {
+	if err := e.docker.ComposePull(ctx, workDir, composeFile, logFile); err != nil {
 		return fmt.Errorf("compose pull: %w", err)
 	}
 
 	fmt.Fprintf(logFile, "Running docker compose up...\n")
-	if err := e.docker.ComposeUp(ctx, repoDir, composeFile, envPath, logFile); err != nil {
+	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
 		return fmt.Errorf("compose up: %w", err)
 	}
 
@@ -148,35 +173,44 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 	models.UpdateAppStatus(app.ID, "deploying")
 	fmt.Fprintf(logFile, "[%s] Redeploying %s\n", time.Now().Format(time.RFC3339), app.Name)
 
-	commitInfo, err := e.git.Pull(app.ID)
-	if err != nil {
-		fmt.Fprintf(logFile, "Pull warning: %v\n", err)
+	workDir := e.workDir(app)
+
+	if app.Source == types.SourceManual {
+		composeFilePath := filepath.Join(workDir, app.ComposePath)
+		os.WriteFile(composeFilePath, []byte(app.ComposeContent), 0644)
+		fmt.Fprintf(logFile, "Compose file rewritten\n")
+		dep.CommitSHA = "manual"
+		dep.CommitMessage = "manual compose\n"
 	} else {
-		parts := splitCommitInfo(commitInfo)
-		if len(parts) >= 1 {
-			dep.CommitSHA = parts[0]
+		commitInfo, err := e.git.Pull(app.ID)
+		if err != nil {
+			fmt.Fprintf(logFile, "Pull warning: %v\n", err)
+		} else {
+			parts := splitCommitInfo(commitInfo)
+			if len(parts) >= 1 {
+				dep.CommitSHA = parts[0]
+			}
+			if len(parts) >= 2 {
+				dep.CommitMessage = parts[1]
+			}
+			fmt.Fprintf(logFile, "Commit: %s\n", commitInfo)
 		}
-		if len(parts) >= 2 {
-			dep.CommitMessage = parts[1]
-		}
-		fmt.Fprintf(logFile, "Commit: %s\n", commitInfo)
 	}
 
-	repoDir := e.git.RepoPath(app.ID)
-	envPath, err := e.docker.WriteEnvFile(repoDir, app.EnvVars)
+	envPath, err := e.docker.WriteEnvFile(workDir, app.EnvVars)
 	if err != nil {
 		return nil, fmt.Errorf("write env file: %w", err)
 	}
 
-	composeFile := filepath.Join(repoDir, app.ComposePath)
+	composeFile := filepath.Join(workDir, app.ComposePath)
 
 	fmt.Fprintf(logFile, "Pulling latest images...\n")
-	if err := e.docker.ComposePull(ctx, repoDir, composeFile, logFile); err != nil {
+	if err := e.docker.ComposePull(ctx, workDir, composeFile, logFile); err != nil {
 		logFile.WriteString(fmt.Sprintf("Pull warning: %v\n", err))
 	}
 
 	fmt.Fprintf(logFile, "Recreating containers...\n")
-	if err := e.docker.ComposeUp(ctx, repoDir, composeFile, envPath, logFile); err != nil {
+	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
 		dep.Status = types.StatusFailed
 		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
 		models.UpdateAppStatus(app.ID, "failed")
@@ -193,8 +227,8 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 }
 
 func (e *Engine) Restart(ctx context.Context, app *types.Application) error {
-	repoDir := e.git.RepoPath(app.ID)
-	composeFile := filepath.Join(repoDir, app.ComposePath)
+	workDir := e.workDir(app)
+	composeFile := filepath.Join(workDir, app.ComposePath)
 
 	logDir := filepath.Join("logs", app.ID)
 	os.MkdirAll(logDir, 0755)
@@ -206,12 +240,12 @@ func (e *Engine) Restart(ctx context.Context, app *types.Application) error {
 	defer logFile.Close()
 
 	fmt.Fprintf(logFile, "[%s] Restarting %s\n", time.Now().Format(time.RFC3339), app.Name)
-	return e.docker.ComposeRestart(ctx, repoDir, composeFile, logFile)
+	return e.docker.ComposeRestart(ctx, workDir, composeFile, logFile)
 }
 
 func (e *Engine) Stop(ctx context.Context, app *types.Application) error {
-	repoDir := e.git.RepoPath(app.ID)
-	composeFile := filepath.Join(repoDir, app.ComposePath)
+	workDir := e.workDir(app)
+	composeFile := filepath.Join(workDir, app.ComposePath)
 
 	logDir := filepath.Join("logs", app.ID)
 	os.MkdirAll(logDir, 0755)
@@ -223,15 +257,15 @@ func (e *Engine) Stop(ctx context.Context, app *types.Application) error {
 	defer logFile.Close()
 
 	fmt.Fprintf(logFile, "[%s] Stopping %s\n", time.Now().Format(time.RFC3339), app.Name)
-	if err := e.docker.ComposeDown(ctx, repoDir, composeFile, logFile); err != nil {
+	if err := e.docker.ComposeDown(ctx, workDir, composeFile, logFile); err != nil {
 		return err
 	}
 	return models.UpdateAppStatus(app.ID, "stopped")
 }
 
 func (e *Engine) Start(ctx context.Context, app *types.Application) error {
-	repoDir := e.git.RepoPath(app.ID)
-	composeFile := filepath.Join(repoDir, app.ComposePath)
+	workDir := e.workDir(app)
+	composeFile := filepath.Join(workDir, app.ComposePath)
 
 	logDir := filepath.Join("logs", app.ID)
 	os.MkdirAll(logDir, 0755)
@@ -242,10 +276,10 @@ func (e *Engine) Start(ctx context.Context, app *types.Application) error {
 	}
 	defer logFile.Close()
 
-	envPath, _ := e.docker.WriteEnvFile(repoDir, app.EnvVars)
+	envPath, _ := e.docker.WriteEnvFile(workDir, app.EnvVars)
 
 	fmt.Fprintf(logFile, "[%s] Starting %s\n", time.Now().Format(time.RFC3339), app.Name)
-	if err := e.docker.ComposeUp(ctx, repoDir, composeFile, envPath, logFile); err != nil {
+	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
 		return err
 	}
 	return models.UpdateAppStatus(app.ID, "running")

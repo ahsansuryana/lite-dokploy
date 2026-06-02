@@ -43,31 +43,45 @@ func CreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.RepoURL == "" {
-		http.Error(w, "name and repoUrl required", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
-	if req.Branch == "" {
-		req.Branch = "main"
-	}
-	if req.ComposePath == "" {
-		req.ComposePath = "docker-compose.yml"
-	}
-	if req.Source == "" {
+
+	if req.Source == "" || req.Source == types.SourceGit {
+		if req.RepoURL == "" {
+			http.Error(w, "repoUrl required for git source", http.StatusBadRequest)
+			return
+		}
+		if req.Branch == "" {
+			req.Branch = "main"
+		}
+		if req.ComposePath == "" {
+			req.ComposePath = "docker-compose.yml"
+		}
 		req.Source = types.SourceGit
+	} else if req.Source == types.SourceManual {
+		if req.ComposeContent == "" {
+			http.Error(w, "composeContent required for manual source", http.StatusBadRequest)
+			return
+		}
+		if req.ComposePath == "" {
+			req.ComposePath = "docker-compose.yml"
+		}
 	}
 
 	app := &types.Application{
-		ID:          uuid.New().String(),
-		Name:        req.Name,
-		RepoURL:     req.RepoURL,
-		Branch:      req.Branch,
-		ComposePath: req.ComposePath,
-		Domain:      req.Domain,
-		EnvVars:     req.EnvVars,
-		Status:      "stopped",
-		Source:      req.Source,
-		CreatedAt:   time.Now(),
+		ID:            uuid.New().String(),
+		Name:          req.Name,
+		RepoURL:       req.RepoURL,
+		Branch:        req.Branch,
+		ComposePath:   req.ComposePath,
+		ComposeContent: req.ComposeContent,
+		Domain:        req.Domain,
+		EnvVars:       req.EnvVars,
+		Status:        "stopped",
+		Source:        req.Source,
+		CreatedAt:     time.Now(),
 	}
 
 	if err := models.CreateApplication(app); err != nil {
