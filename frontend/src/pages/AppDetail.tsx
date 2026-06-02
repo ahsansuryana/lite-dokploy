@@ -1,33 +1,100 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { usePath, Link } from '../router'
-import type { Application, Deployment } from '../types'
+import type { Application, Deployment, AppDomain } from '../types'
 import { StatusBadge, StatusDot } from '../components/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
-import { ArrowLeft, Globe, Rocket, Terminal, Copy, RefreshCw, Play, Square, RotateCcw } from 'lucide-react'
+import {
+  ArrowLeft, Globe, Rocket, Terminal, Copy, RefreshCw, Play, Square, RotateCcw,
+  Plus, X, Pencil, Trash2, ShieldCheck,
+} from 'lucide-react'
 
 export function AppDetail() {
   const path = usePath()
   const appId = path.replace('/app/', '')
   const [app, setApp] = useState<Application | null>(null)
   const [deps, setDeps] = useState<Deployment[]>([])
+  const [domains, setDomains] = useState<AppDomain[]>([])
   const [log, setLog] = useState<string>('')
   const [logDepId, setLogDepId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [showDomainForm, setShowDomainForm] = useState(false)
+  const [editingDomain, setEditingDomain] = useState<AppDomain | null>(null)
+  const [domainForm, setDomainForm] = useState({
+    host: '',
+    port: 80,
+    path: '/',
+    internalPath: '/',
+    stripPath: false,
+    https: false,
+    serviceName: '',
+  })
+  const [domainSaving, setDomainSaving] = useState(false)
+
+  const resetDomainForm = () => {
+    setDomainForm({ host: '', port: 80, path: '/', internalPath: '/', stripPath: false, https: false, serviceName: '' })
+    setEditingDomain(null)
+    setShowDomainForm(false)
+  }
+
+  const editDomain = (d: AppDomain) => {
+    setDomainForm({
+      host: d.host,
+      port: d.port,
+      path: d.path,
+      internalPath: d.internalPath,
+      stripPath: d.stripPath,
+      https: d.https,
+      serviceName: d.serviceName,
+    })
+    setEditingDomain(d)
+    setShowDomainForm(true)
+  }
+
+  const saveDomain = async () => {
+    setDomainSaving(true)
+    try {
+      if (editingDomain) {
+        await api.updateDomain(appId, editingDomain.id, domainForm)
+      } else {
+        await api.createDomain(appId, domainForm)
+      }
+      resetDomainForm()
+      const d = await api.listDomains(appId)
+      setDomains(d)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDomainSaving(false)
+    }
+  }
+
+  const deleteDomain = async (domainId: string) => {
+    if (!confirm('Delete this domain?')) return
+    try {
+      await api.deleteDomain(appId, domainId)
+      setDomains(domains.filter((d) => d.id !== domainId))
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   const load = () => {
     setLoading(true)
     Promise.all([
       api.getApp(appId),
       api.listDeployments(appId),
+      api.listDomains(appId),
     ])
-      .then(([app, deps]) => {
+      .then(([app, deps, domains]) => {
         setApp(app)
         setDeps(deps)
+        setDomains(domains)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -138,17 +205,143 @@ export function AppDetail() {
                       <dt className="text-muted-foreground text-xs">Branch</dt>
                       <dd className="text-xs mt-0.5">{app.branch}</dd>
                     </div>
-                    </>  
+                    </>
                     )}
                     <div>
                       <dt className="text-muted-foreground text-xs">Compose Path</dt>
                       <dd className="font-mono text-xs mt-0.5">{app.composePath}</dd>
                     </div>
-                    <div>
-                      <dt className="text-muted-foreground text-xs">Domain</dt>
-                      <dd className="text-xs mt-0.5">{app.domain || <span className="text-muted-foreground/50">&mdash;</span>}</dd>
-                    </div>
                   </dl>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                      Domains
+                    </CardTitle>
+                    <Button size="sm" variant="ghost" onClick={() => { resetDomainForm(); setShowDomainForm(true) }}>
+                      <Plus size={14} className="mr-1" />
+                      Add Domain
+                    </Button>
+                  </div>
+                </CardHeader>
+                <Separator />
+                <CardContent className="p-4 space-y-3">
+                  {domains.length === 0 && !showDomainForm && (
+                    <p className="text-sm text-muted-foreground/60">No domains configured.</p>
+                  )}
+                  {domains.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between rounded-lg bg-secondary p-3 text-sm">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Globe size={14} className="text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{d.host}</span>
+                            {d.path !== '/' && <Badge variant="outline" className="text-[10px]">{d.path}</Badge>}
+                            {d.https && <ShieldCheck size={12} className="text-green-500" />}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                            <span>port {d.port}</span>
+                            {d.serviceName && <><span>·</span><span>service: {d.serviceName}</span></>}
+                            {d.path !== d.internalPath && <><span>·</span><span>→ {d.internalPath}</span></>}
+                            {d.stripPath && <><span>·</span><Badge variant="secondary" className="text-[10px]">strip</Badge></>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button size="icon" variant="ghost" className="size-7" onClick={() => editDomain(d)}>
+                          <Pencil size={12} />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="size-7 text-destructive" onClick={() => deleteDomain(d.id)}>
+                          <Trash2 size={12} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {showDomainForm && (
+                    <div className="rounded-lg border border-input bg-background p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{editingDomain ? 'Edit Domain' : 'New Domain'}</span>
+                        <Button size="icon" variant="ghost" className="size-6" onClick={resetDomainForm}>
+                          <X size={14} />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <label className="block text-xs text-muted-foreground mb-1">Host *</label>
+                          <input
+                            required
+                            value={domainForm.host}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, host: e.target.value }))}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            placeholder="example.com"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Port</label>
+                          <input
+                            type="number"
+                            value={domainForm.port}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, port: Number(e.target.value) }))}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Service Name</label>
+                          <input
+                            value={domainForm.serviceName}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, serviceName: e.target.value }))}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            placeholder="(auto)"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Path (outer)</label>
+                          <input
+                            value={domainForm.path}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, path: e.target.value }))}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Internal Path</label>
+                          <input
+                            value={domainForm.internalPath}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, internalPath: e.target.value }))}
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={domainForm.stripPath}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, stripPath: e.target.checked }))}
+                            className="rounded border-input"
+                          />
+                          Strip path
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={domainForm.https}
+                            onChange={(e) => setDomainForm((f) => ({ ...f, https: e.target.checked }))}
+                            className="rounded border-input"
+                          />
+                          HTTPS
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button size="sm" variant="outline" onClick={resetDomainForm}>Cancel</Button>
+                        <Button size="sm" onClick={saveDomain} disabled={domainSaving || !domainForm.host}>
+                          {domainSaving ? 'Saving...' : editingDomain ? 'Update' : 'Create'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

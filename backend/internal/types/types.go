@@ -21,18 +21,17 @@ const (
 )
 
 type Application struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	RepoURL       string    `json:"repoUrl"`
-	Branch        string    `json:"branch"`
-	ComposePath   string    `json:"composePath"`
-	ComposeContent string   `json:"composeContent,omitempty"`
-	Domain        string    `json:"domain"`
-	EnvVars       string    `json:"envVars"`
-	Status        string    `json:"status"`
-	Source        AppSource `json:"source"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	RepoURL        string    `json:"repoUrl"`
+	Branch         string    `json:"branch"`
+	ComposePath    string    `json:"composePath"`
+	ComposeContent string    `json:"composeContent,omitempty"`
+	EnvVars        string    `json:"envVars"`
+	Status         string    `json:"status"`
+	Source         AppSource `json:"source"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type Deployment struct {
@@ -46,15 +45,28 @@ type Deployment struct {
 	UpdatedAt     time.Time    `json:"updatedAt"`
 }
 
+type AppDomain struct {
+	ID            string    `json:"id"`
+	ApplicationID string    `json:"applicationId"`
+	Host          string    `json:"host"`
+	Port          int       `json:"port"`
+	Path          string    `json:"path"`
+	InternalPath  string    `json:"internalPath"`
+	StripPath     bool      `json:"stripPath"`
+	HTTPS         bool      `json:"https"`
+	ServiceName   string    `json:"serviceName"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
 type CreateAppRequest struct {
-	Name          string    `json:"name"`
-	RepoURL       string    `json:"repoUrl"`
-	Branch        string    `json:"branch"`
-	ComposePath   string    `json:"composePath"`
-	ComposeContent string   `json:"composeContent"`
-	Domain        string    `json:"domain"`
-	EnvVars       string    `json:"envVars"`
-	Source        AppSource `json:"source"`
+	Name           string    `json:"name"`
+	RepoURL        string    `json:"repoUrl"`
+	Branch         string    `json:"branch"`
+	ComposePath    string    `json:"composePath"`
+	ComposeContent string    `json:"composeContent"`
+	EnvVars        string    `json:"envVars"`
+	Source         AppSource `json:"source"`
 }
 
 type UpdateAppRequest struct {
@@ -62,14 +74,33 @@ type UpdateAppRequest struct {
 	RepoURL     string `json:"repoUrl"`
 	Branch      string `json:"branch"`
 	ComposePath string `json:"composePath"`
-	Domain      string `json:"domain"`
 	EnvVars     string `json:"envVars"`
 }
 
+type CreateDomainRequest struct {
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	Path         string `json:"path"`
+	InternalPath string `json:"internalPath"`
+	StripPath    bool   `json:"stripPath"`
+	HTTPS        bool   `json:"https"`
+	ServiceName  string `json:"serviceName"`
+}
+
+type UpdateDomainRequest struct {
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	Path         string `json:"path"`
+	InternalPath string `json:"internalPath"`
+	StripPath    bool   `json:"stripPath"`
+	HTTPS        bool   `json:"https"`
+	ServiceName  string `json:"serviceName"`
+}
+
 type WebhookPayload struct {
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	Commits    []struct {
+	Ref     string `json:"ref"`
+	After   string `json:"after"`
+	Commits []struct {
 		Message string `json:"message"`
 	} `json:"commits"`
 }

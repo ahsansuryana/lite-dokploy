@@ -1,4 +1,4 @@
-import type { Application, Deployment, DashboardItem } from './types'
+import type { Application, Deployment, DashboardItem, AppDomain } from './types'
 
 const BASE = '/api'
 
@@ -53,4 +53,19 @@ export const api = {
     request<{ appId: string; logFile: string; preview: string }[]>(
       `/applications/${appId}/logs`,
     ),
+
+  listDomains: (appId: string) =>
+    request<AppDomain[]>(`/applications/${appId}/domains`),
+  createDomain: (appId: string, data: Partial<AppDomain>) =>
+    request<AppDomain>(`/applications/${appId}/domains`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateDomain: (appId: string, domainId: string, data: Partial<AppDomain>) =>
+    request<AppDomain>(`/applications/${appId}/domains/${domainId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteDomain: (appId: string, domainId: string) =>
+    fetch(`${BASE}/applications/${appId}/domains/${domainId}`, { method: 'DELETE' }),
 }

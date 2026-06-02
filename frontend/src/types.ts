@@ -5,10 +5,23 @@ export interface Application {
   branch: string
   composePath: string
   composeContent?: string
-  domain: string
   envVars: string
   status: string
   source: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AppDomain {
+  id: string
+  applicationId: string
+  host: string
+  port: number
+  path: string
+  internalPath: string
+  stripPath: boolean
+  https: boolean
+  serviceName: string
   createdAt: string
   updatedAt: string
 }

@@ -77,7 +77,6 @@ func CreateApp(w http.ResponseWriter, r *http.Request) {
 		Branch:        req.Branch,
 		ComposePath:   req.ComposePath,
 		ComposeContent: req.ComposeContent,
-		Domain:        req.Domain,
 		EnvVars:       req.EnvVars,
 		Status:        "stopped",
 		Source:        req.Source,
@@ -123,7 +122,6 @@ func UpdateApp(w http.ResponseWriter, r *http.Request) {
 	if req.ComposePath != "" {
 		app.ComposePath = req.ComposePath
 	}
-	app.Domain = req.Domain
 	app.EnvVars = req.EnvVars
 
 	if err := models.UpdateApplication(app); err != nil {

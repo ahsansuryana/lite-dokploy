@@ -49,6 +49,13 @@ func NewRouter(engine *deploy.Engine, frontendDir string) http.Handler {
 
 			r.Get("/{id}/deployments", dh.ListDeployments)
 			r.Get("/{id}/logs", handlers.ListAppLogs)
+
+			r.Route("/{id}/domains", func(r chi.Router) {
+				r.Get("/", handlers.ListAppDomains)
+				r.Post("/", handlers.CreateAppDomain)
+				r.Put("/{domainId}", handlers.UpdateAppDomain)
+				r.Delete("/{domainId}", handlers.DeleteAppDomain)
+			})
 		})
 
 		r.Get("/deployments/{depId}/logs", handlers.GetDeploymentLog)

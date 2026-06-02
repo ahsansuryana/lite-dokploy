@@ -17,9 +17,10 @@ import (
 )
 
 type Engine struct {
-	docker  *docker.Manager
-	git     *git.Manager
-	traefik *traefik.Manager
+	docker   *docker.Manager
+	git      *git.Manager
+	traefik  *traefik.Manager
+	readOnly bool
 }
 
 func NewEngine(dm *docker.Manager, gm *git.Manager, tm *traefik.Manager) *Engine {
@@ -36,6 +37,15 @@ func (e *Engine) workDir(app *types.Application) string {
 
 func (e *Engine) composeFile(app *types.Application) string {
 	return filepath.Join(e.workDir(app), app.ComposePath)
+}
+
+func (e *Engine) getDomains(appID string) []types.AppDomain {
+	domains, err := models.ListAppDomains(appID)
+	if err != nil {
+		log.Printf("warning: failed to load domains for %s: %v", appID, err)
+		return nil
+	}
+	return domains
 }
 
 func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
@@ -126,21 +136,44 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 		fmt.Fprintf(logFile, "Environment variables written to .env\n")
 	}
 
-	if app.Domain != "" {
-		fmt.Fprintf(logFile, "Generating Traefik config for domain %s...\n", app.Domain)
-		if traefikErr := e.traefik.GenerateComposeSnippet(app, workDir); traefikErr != nil {
-			log.Printf("traefik config warning: %v", traefikErr)
+	composePath := filepath.Join(workDir, app.ComposePath)
+	domains := e.getDomains(app.ID)
+	if len(domains) > 0 {
+		fmt.Fprintf(logFile, "Configuring %d domain(s)...\n", len(domains))
+		for _, d := range domains {
+			svc := d.ServiceName
+			if svc == "" {
+				svc = "(auto)"
+			}
+			fmt.Fprintf(logFile, "  %s -> service %s (path: %s, port: %d)%s\n",
+				d.Host, svc, d.Path, d.Port, map[bool]string{false: "", true: " [HTTPS]"}[d.HTTPS])
 		}
+
+		composeBytes, err := os.ReadFile(composePath)
+		if err != nil {
+			return fmt.Errorf("read compose file for domain injection: %w", err)
+		}
+
+		modified, err := e.traefik.InjectDomainLabels(composeBytes, app.Name, domains)
+		if err != nil {
+			fmt.Fprintf(logFile, "Warning: domain label injection failed: %v\n", err)
+		} else {
+			if err := os.WriteFile(composePath, modified, 0644); err != nil {
+				return fmt.Errorf("write modified compose file: %w", err)
+			}
+			fmt.Fprintf(logFile, "Traefik labels injected into compose file\n")
+		}
+	} else {
+		fmt.Fprintf(logFile, "No domains configured\n")
 	}
 
-	composeFile := filepath.Join(workDir, app.ComposePath)
 	fmt.Fprintf(logFile, "Running docker compose pull...\n")
-	if err := e.docker.ComposePull(ctx, workDir, composeFile, logFile); err != nil {
+	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
 		return fmt.Errorf("compose pull: %w", err)
 	}
 
 	fmt.Fprintf(logFile, "Running docker compose up...\n")
-	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
+	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
 		return fmt.Errorf("compose up: %w", err)
 	}
 
@@ -202,15 +235,26 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 		return nil, fmt.Errorf("write env file: %w", err)
 	}
 
-	composeFile := filepath.Join(workDir, app.ComposePath)
+	composePath := filepath.Join(workDir, app.ComposePath)
+	domains := e.getDomains(app.ID)
+	if len(domains) > 0 {
+		fmt.Fprintf(logFile, "Re-injecting %d domain(s)...\n", len(domains))
+		composeBytes, err := os.ReadFile(composePath)
+		if err == nil {
+			modified, err := e.traefik.InjectDomainLabels(composeBytes, app.Name, domains)
+			if err == nil {
+				os.WriteFile(composePath, modified, 0644)
+			}
+		}
+	}
 
 	fmt.Fprintf(logFile, "Pulling latest images...\n")
-	if err := e.docker.ComposePull(ctx, workDir, composeFile, logFile); err != nil {
+	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
 		logFile.WriteString(fmt.Sprintf("Pull warning: %v\n", err))
 	}
 
 	fmt.Fprintf(logFile, "Recreating containers...\n")
-	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
+	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
 		dep.Status = types.StatusFailed
 		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
 		models.UpdateAppStatus(app.ID, "failed")

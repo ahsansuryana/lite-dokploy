@@ -16,7 +16,6 @@ export function CreateApp() {
     branch: 'main',
     composePath: 'docker-compose.yml',
     composeContent: '',
-    domain: '',
     envVars: '',
   })
   const [saving, setSaving] = useState(false)
@@ -33,7 +32,6 @@ export function CreateApp() {
         branch: form.branch,
         composePath: form.composePath,
         composeContent: sourceTab === 'manual' ? form.composeContent : undefined,
-        domain: form.domain,
         envVars: form.envVars,
         source: sourceTab === 'manual' ? 'manual' : 'git',
       }
@@ -154,7 +152,7 @@ export function CreateApp() {
                   onChange={(e) => update('composeContent', e.target.value)}
                   rows={14}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
-                  placeholder="version: '3.8'&#10;services:&#10;  app:&#10;    image: nginx:latest&#10;    ports:&#10;      - '8080:80'"
+                  placeholder="services:&#10;  app:&#10;    image: nginx:latest&#10;    ports:&#10;      - '8080:80'"
                 />
                 <div className="flex items-center gap-2 mt-1.5">
                   <input
@@ -167,16 +165,6 @@ export function CreateApp() {
                 </div>
               </div>
             )}
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Domain</label>
-              <input
-                value={form.domain}
-                onChange={(e) => update('domain', e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
-                placeholder="app.example.com"
-              />
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
