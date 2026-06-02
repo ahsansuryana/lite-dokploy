@@ -14,7 +14,7 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ .
 COPY --from=frontend-builder /app/frontend/dist ./frontend-dist
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /server ./cmd/server
+RUN go mod tidy && CGO_ENABLED=0 go build -ldflags="-s -w" -o /server ./cmd/server
 
 # Stage 3: Runtime
 FROM alpine:3.20
