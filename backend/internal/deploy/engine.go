@@ -169,13 +169,14 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 		fmt.Fprintf(logFile, "No domains configured\n")
 	}
 
+	e.ensureVolumeMountDirs(composePath, workDir, logFile)
+
 	fmt.Fprintf(logFile, "Running docker compose pull...\n")
 	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
 		return fmt.Errorf("compose pull: %w", err)
 	}
 
 	fmt.Fprintf(logFile, "Running docker compose up...\n")
-	e.ensureVolumeMountDirs(composePath, workDir, logFile)
 	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
 		return fmt.Errorf("compose up: %w", err)
 	}
@@ -333,6 +334,8 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 			}
 		}
 	}
+
+	e.ensureVolumeMountDirs(composePath, workDir, logFile)
 
 	fmt.Fprintf(logFile, "Pulling latest images...\n")
 	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
