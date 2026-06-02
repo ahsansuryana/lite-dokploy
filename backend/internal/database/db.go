@@ -10,9 +10,10 @@ import (
 
 var DB *sql.DB
 
-func Init(dbPath string) error {
-	if err := os.MkdirAll("data", 0755); err != nil {
-		return fmt.Errorf("create data dir: %w", err)
+func Init(dataDir string) error {
+	dbPath := dataDir
+	if fi, err := os.Stat(dataDir); err == nil && fi.IsDir() {
+		dbPath = dataDir + "/db.sqlite"
 	}
 
 	var err error
