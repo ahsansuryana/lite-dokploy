@@ -51,7 +51,9 @@ export function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {data.map(({ application: app, latestDeployment }) => (
+              {data.map((item) => {
+                const { latestDeployment, ...app } = item
+                return (
                 <tr key={app.id} className="border-b border-gray-800/50 hover:bg-gray-900/50 transition-colors">
                   <td className="py-3 px-2">
                     <Link href={`/app/${app.id}`} className="text-cyan-400 hover:text-cyan-300 font-medium">
@@ -76,7 +78,8 @@ export function Dashboard() {
                       : <span className="text-gray-600">—</span>}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

@@ -23,7 +23,6 @@ export interface Deployment {
   updatedAt: string
 }
 
-export interface DashboardItem {
-  application: Application
+export interface DashboardItem extends Application {
   latestDeployment: Deployment | null
 }
