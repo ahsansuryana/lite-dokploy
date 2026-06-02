@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/lite-dokploy/backend/internal/git"
 	"github.com/lite-dokploy/backend/internal/traefik"
 	"github.com/lite-dokploy/backend/internal/types"
+	"gopkg.in/yaml.v3"
 )
 
 type Engine struct {
@@ -173,11 +175,72 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 	}
 
 	fmt.Fprintf(logFile, "Running docker compose up...\n")
+	e.ensureVolumeMountDirs(composePath, workDir, logFile)
 	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
 		return fmt.Errorf("compose up: %w", err)
 	}
 
 	return nil
+}
+
+func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.File) {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		return
+	}
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return
+	}
+	services, ok := parsed["services"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for svcName, svcRaw := range services {
+		svc, ok := svcRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		volsRaw, ok := svc["volumes"]
+		if !ok {
+			continue
+		}
+		vols, ok := volsRaw.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, v := range vols {
+			vStr, ok := v.(string)
+			if !ok {
+				continue
+			}
+			parts := strings.SplitN(vStr, ":", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			hostPath := strings.TrimSpace(parts[0])
+			if !strings.HasPrefix(hostPath, ".") && !strings.HasPrefix(hostPath, "/") {
+				continue
+			}
+			fullPath := filepath.Join(workDir, hostPath)
+			dir := filepath.Dir(fullPath)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				fmt.Fprintf(logFile, "Warning: could not create dir for volume mount %s: %v\n", hostPath, err)
+				continue
+			}
+			info, err := os.Stat(fullPath)
+			if os.IsNotExist(err) {
+				f, err := os.Create(fullPath)
+				if err != nil {
+					fmt.Fprintf(logFile, "Warning: could not create file for volume mount %s: %v\n", hostPath, err)
+				} else {
+					f.Close()
+				}
+			} else if err == nil && info.IsDir() {
+				os.MkdirAll(fullPath, 0755)
+			}
+		}
+	}
 }
 
 func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
