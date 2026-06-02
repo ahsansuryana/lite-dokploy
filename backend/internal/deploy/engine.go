@@ -169,7 +169,7 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 		fmt.Fprintf(logFile, "No domains configured\n")
 	}
 
-	e.ensureVolumeMountDirs(composePath, workDir, logFile)
+	e.stripBindMounts(composePath, logFile)
 
 	fmt.Fprintf(logFile, "Running docker compose pull...\n")
 	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
@@ -184,23 +184,27 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 	return nil
 }
 
-func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.File) {
+type bindMount struct {
+	hostPath   string
+	serviceName string
+	containerPath string
+}
+
+func (e *Engine) stripBindMounts(composePath string, logFile *os.File) {
 	data, err := os.ReadFile(composePath)
 	if err != nil {
-		fmt.Fprintf(logFile, "Volume mount dirs: read error: %v\n", err)
 		return
 	}
-	fmt.Fprintf(logFile, "Volume mount dirs: checking compose file (%d bytes)...\n", len(data))
 	var parsed map[string]interface{}
 	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		fmt.Fprintf(logFile, "Volume mount dirs: yaml error: %v\n", err)
 		return
 	}
 	services, ok := parsed["services"].(map[string]interface{})
 	if !ok {
-		fmt.Fprintf(logFile, "Volume mount dirs: no services found\n")
 		return
 	}
+	var mounts []bindMount
+	modified := false
 	for svcName, svcRaw := range services {
 		svc, ok := svcRaw.(map[string]interface{})
 		if !ok {
@@ -212,59 +216,54 @@ func (e *Engine) ensureVolumeMountDirs(composePath, workDir string, logFile *os.
 		}
 		vols, ok := volsRaw.([]interface{})
 		if !ok {
-			fmt.Fprintf(logFile, "Volume mount dirs: service %s volumes not a list\n", svcName)
 			continue
 		}
-		fmt.Fprintf(logFile, "Volume mount dirs: service %s has %d volume(s)\n", svcName, len(vols))
+		var kept []interface{}
 		for _, v := range vols {
 			vStr, ok := v.(string)
 			if !ok {
-				fmt.Fprintf(logFile, "Volume mount dirs: volume entry not a string: %T\n", v)
+				kept = append(kept, v)
 				continue
 			}
 			parts := strings.SplitN(vStr, ":", 2)
 			if len(parts) < 2 {
+				kept = append(kept, v)
 				continue
 			}
-			hostPath := strings.TrimSpace(parts[0])
-			if !strings.HasPrefix(hostPath, ".") && !strings.HasPrefix(hostPath, "/") {
-				continue
-			}
-			fullPath := filepath.Join(workDir, hostPath)
-			dir := filepath.Dir(fullPath)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				fmt.Fprintf(logFile, "Warning: could not create dir for volume mount %s: %v\n", hostPath, err)
-				continue
-			}
-			info, err := os.Stat(fullPath)
-			if os.IsNotExist(err) {
-				f, err := os.Create(fullPath)
-				if err != nil {
-					fmt.Fprintf(logFile, "Warning: could not create file for volume mount %s: %v\n", hostPath, err)
-				} else {
-					if strings.HasSuffix(hostPath, "nginx.conf") {
-						f.WriteString("events {}\nhttp {\n    server {\n        listen 80;\n    }\n}\n")
-					}
-					f.Close()
-					fmt.Fprintf(logFile, "Volume mount dirs: created file %s\n", hostPath)
-				}
-			} else if err == nil && info.Size() == 0 {
-				f, err := os.Create(fullPath)
-				if err != nil {
-					fmt.Fprintf(logFile, "Warning: could not recreate file for volume mount %s: %v\n", hostPath, err)
-				} else {
-					if strings.HasSuffix(hostPath, "nginx.conf") {
-						f.WriteString("events {}\nhttp {\n    server {\n        listen 80;\n    }\n}\n")
-					}
-					f.Close()
-					fmt.Fprintf(logFile, "Volume mount dirs: recreated file %s\n", hostPath)
-				}
-			} else if err == nil && info.IsDir() {
-				os.MkdirAll(fullPath, 0755)
+			source := strings.TrimSpace(parts[0])
+			if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
+				mounts = append(mounts, bindMount{
+					hostPath:      source,
+					serviceName:   svcName,
+					containerPath: strings.TrimSpace(parts[1]),
+				})
+				modified = true
+			} else {
+				kept = append(kept, v)
 			}
 		}
+		if len(kept) == 0 {
+			delete(svc, "volumes")
+		} else {
+			svc["volumes"] = kept
+		}
 	}
-	fmt.Fprintf(logFile, "Volume mount dirs: done\n")
+	if !modified {
+		return
+	}
+	fmt.Fprintf(logFile, "Removed %d bind mount(s) from compose:\n", len(mounts))
+	for _, m := range mounts {
+		fmt.Fprintf(logFile, "  - %s -> %s (service: %s)\n", m.hostPath, m.containerPath, m.serviceName)
+	}
+	out, err := yaml.Marshal(parsed)
+	if err != nil {
+		fmt.Fprintf(logFile, "Warning: could not marshal compose: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(composePath, out, 0644); err != nil {
+		fmt.Fprintf(logFile, "Warning: could not write compose: %v\n", err)
+	}
+	_ = mounts // mounts are logged but not used (containers start without bind mounts)
 }
 
 func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
@@ -335,7 +334,7 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 		}
 	}
 
-	e.ensureVolumeMountDirs(composePath, workDir, logFile)
+	e.stripBindMounts(composePath, logFile)
 
 	fmt.Fprintf(logFile, "Pulling latest images...\n")
 	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
