@@ -13,7 +13,13 @@ var DB *sql.DB
 func Init(dataDir string) error {
 	dbPath := dataDir
 	if fi, err := os.Stat(dataDir); err == nil && fi.IsDir() {
-		dbPath = dataDir + "/db.sqlite"
+		if _, err := os.Stat(dataDir + "/db.sqlite"); os.IsNotExist(err) {
+			if _, err := os.Stat(dataDir); err == nil {
+				dbPath = dataDir + "/db.sqlite"
+			}
+		} else {
+			dbPath = dataDir + "/db.sqlite"
+		}
 	}
 
 	var err error

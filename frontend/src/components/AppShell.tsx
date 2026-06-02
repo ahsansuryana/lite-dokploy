@@ -1,5 +1,6 @@
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarGroup, SidebarItem, SidebarInset, SidebarTrigger, SidebarRail } from './ui/sidebar'
 import { Separator } from './ui/separator'
+import { ModeToggle } from './ui/mode-toggle'
 import { usePath, navigate, Link } from '../router'
 import { House, Plus, LayoutDashboard } from 'lucide-react'
 
@@ -59,6 +60,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-sm font-medium text-foreground">New Application</span>
             </>
           )}
+          <div className="ml-auto">
+            <ModeToggle />
+          </div>
         </header>
         <main className="flex-1 p-4">
           {children}
