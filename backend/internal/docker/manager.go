@@ -26,9 +26,6 @@ func (m *Manager) Ping(ctx context.Context) error {
 
 func (m *Manager) ComposeUp(ctx context.Context, composeDir string, composeFile string, envFile string, logWriter *os.File) error {
 	args := []string{"compose", "-f", composeFile, "up", "-d", "--remove-orphans"}
-	if envFile != "" {
-		args = append(args, "--env-file", envFile)
-	}
 	return m.runCompose(ctx, composeDir, args, logWriter)
 }
 

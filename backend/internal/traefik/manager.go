@@ -3,6 +3,7 @@ package traefik
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/lite-dokploy/backend/internal/types"
 	"gopkg.in/yaml.v3"
@@ -79,6 +80,8 @@ func (m *Manager) InjectDomainLabels(composeBytes []byte, appName string, domain
 	if err != nil {
 		return nil, fmt.Errorf("marshal compose: %w", err)
 	}
+
+	out = fixNullValues(out)
 
 	return out, nil
 }
@@ -170,4 +173,20 @@ func (m *Manager) buildLabels(d types.AppDomain, appName string, idx int) []stri
 
 func (m *Manager) EnsureTraefikNetwork() error {
 	return nil
+}
+
+func fixNullValues(yamlBytes []byte) []byte {
+	s := string(yamlBytes)
+	lines := strings.Split(s, "\n")
+	var result []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasSuffix(trimmed, ": null") || strings.HasSuffix(trimmed, ": null\r") {
+				line = strings.Replace(line, ": null", ": {}", 1)
+			}
+		}
+		result = append(result, line)
+	}
+	return []byte(strings.Join(result, "\n"))
 }
