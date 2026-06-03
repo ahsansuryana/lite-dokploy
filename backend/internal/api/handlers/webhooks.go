@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -33,42 +34,46 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event := r.Header.Get("X-GitHub-Event")
-	if event == "" {
-		event = r.Header.Get("X-Gitlab-Event")
-	}
-	if event == "" {
-		event = "push"
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		body = nil
 	}
 
-	if event != "push" {
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ignored", "reason": "non-push event"})
-		return
-	}
+	if len(body) > 0 {
+		var payload struct {
+			Ref     string `json:"ref"`
+			After   string `json:"after"`
+			Commits []struct {
+				Message string `json:"message"`
+			} `json:"commits"`
+		}
 
-	var payload struct {
-		Ref     string `json:"ref"`
-		After   string `json:"after"`
-		Commits []struct {
-			Message string `json:"message"`
-		} `json:"commits"`
-	}
+		if err := json.Unmarshal(body, &payload); err == nil && payload.Ref != "" {
+			event := r.Header.Get("X-GitHub-Event")
+			if event == "" {
+				event = r.Header.Get("X-Gitlab-Event")
+			}
+			if event == "" {
+				event = "push"
+			}
 
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid payload", http.StatusBadRequest)
-		return
-	}
+			if event != "push" {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]string{"status": "ignored", "reason": "non-push event"})
+				return
+			}
 
-	if app.Branch != "" {
-		refBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
-		if refBranch != app.Branch {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
-				"status": "skipped",
-				"reason": fmt.Sprintf("branch %s does not match app branch %s", refBranch, app.Branch),
-			})
-			return
+			if app.Branch != "" {
+				refBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+				if refBranch != app.Branch {
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(map[string]string{
+						"status": "skipped",
+						"reason": fmt.Sprintf("branch %s does not match app branch %s", refBranch, app.Branch),
+					})
+					return
+				}
+			}
 		}
 	}
 
