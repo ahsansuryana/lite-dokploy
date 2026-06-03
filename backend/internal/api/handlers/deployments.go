@@ -43,17 +43,16 @@ func (h *DeployHandler) DeployApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dep, err := h.engine.Deploy(context.Background(), app)
+	dep, err := h.engine.Deploy(context.Background(), app, "manual")
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"deployment": dep,
-			"error":      err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(dep)
 }
 
@@ -69,17 +68,16 @@ func (h *DeployHandler) RedeployApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dep, err := h.engine.Redeploy(context.Background(), app)
+	dep, err := h.engine.Redeploy(context.Background(), app, "manual")
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"deployment": dep,
-			"error":      err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(dep)
 }
 

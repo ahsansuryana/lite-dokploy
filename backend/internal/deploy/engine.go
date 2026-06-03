@@ -50,7 +50,7 @@ func (e *Engine) getDomains(appID string) []types.AppDomain {
 	return domains
 }
 
-func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
+func (e *Engine) Deploy(ctx context.Context, app *types.Application, trigger string) (*types.Deployment, error) {
 	dep := &types.Deployment{
 		ID:            uuid.New().String(),
 		ApplicationID: app.ID,
@@ -59,24 +59,29 @@ func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Dep
 	}
 
 	logDir := filepath.Join("logs", app.ID)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return nil, fmt.Errorf("create log dir: %w", err)
-	}
-
-	logPath := filepath.Join(logDir, fmt.Sprintf("%s.log", dep.ID))
-	dep.LogPath = logPath
-
-	logFile, err := os.Create(logPath)
-	if err != nil {
-		return nil, fmt.Errorf("create log file: %w", err)
-	}
-	defer logFile.Close()
+	dep.LogPath = filepath.Join(logDir, fmt.Sprintf("%s.log", dep.ID))
 
 	if err := models.CreateDeployment(dep); err != nil {
 		return nil, fmt.Errorf("save deployment: %w", err)
 	}
-
 	models.UpdateAppStatus(app.ID, "deploying")
+
+	go e.runDeploy(context.Background(), app, dep, trigger)
+
+	return dep, nil
+}
+
+func (e *Engine) runDeploy(ctx context.Context, app *types.Application, dep *types.Deployment, trigger string) {
+	os.MkdirAll(filepath.Dir(dep.LogPath), 0755)
+	logFile, err := os.Create(dep.LogPath)
+	if err != nil {
+		log.Printf("create log file: %v", err)
+		dep.Status = types.StatusFailed
+		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
+		models.UpdateAppStatus(app.ID, "failed")
+		return
+	}
+	defer logFile.Close()
 
 	fmt.Fprintf(logFile, "[%s] Starting deployment for %s\n", time.Now().Format(time.RFC3339), app.Name)
 	if app.Source == types.SourceManual {
@@ -86,23 +91,21 @@ func (e *Engine) Deploy(ctx context.Context, app *types.Application) (*types.Dep
 	}
 	fmt.Fprintf(logFile, "Compose file: %s\n", app.ComposePath)
 
-	if err := e.deploy(ctx, app, dep, logFile); err != nil {
+	if err := e.deploy(ctx, app, dep, logFile, trigger); err != nil {
 		dep.Status = types.StatusFailed
 		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
 		models.UpdateAppStatus(app.ID, "failed")
 		fmt.Fprintf(logFile, "[%s] DEPLOYMENT FAILED: %v\n", time.Now().Format(time.RFC3339), err)
-		return dep, fmt.Errorf("deploy failed: %w", err)
+		return
 	}
 
 	dep.Status = types.StatusDone
 	models.UpdateDeployment(dep)
 	models.UpdateAppStatus(app.ID, "running")
 	fmt.Fprintf(logFile, "[%s] Deployment completed successfully\n", time.Now().Format(time.RFC3339))
-
-	return dep, nil
 }
 
-func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.Deployment, logFile *os.File) error {
+func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.Deployment, logFile *os.File, trigger string) error {
 	workDir := e.workDir(app)
 	os.MkdirAll(workDir, 0755)
 
@@ -112,8 +115,8 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 			return fmt.Errorf("write compose file: %w", err)
 		}
 		fmt.Fprintf(logFile, "Compose file written to %s\n", composeFilePath)
-		dep.CommitSHA = "manual"
-		dep.CommitMessage = "manual compose\n"
+		dep.CommitSHA = trigger
+		dep.CommitMessage = trigger + " deploy\n"
 	} else {
 		fmt.Fprintf(logFile, "[%s] Cloning repository...\n", time.Now().Format(time.RFC3339))
 		repoDir, err := e.git.Clone(app.RepoURL, app.Branch, app.ID)
@@ -158,115 +161,39 @@ func (e *Engine) deploy(ctx context.Context, app *types.Application, dep *types.
 
 		modified, err := e.traefik.InjectDomainLabels(composeBytes, app.Name, domains)
 		if err != nil {
-			fmt.Fprintf(logFile, "Warning: domain label injection failed: %v\n", err)
-		} else {
-			if err := os.WriteFile(composePath, modified, 0644); err != nil {
-				return fmt.Errorf("write modified compose file: %w", err)
-			}
-			fmt.Fprintf(logFile, "Traefik labels injected into compose file\n")
+			return fmt.Errorf("inject domain labels: %w", err)
 		}
-	} else {
-		fmt.Fprintf(logFile, "No domains configured\n")
+
+		if err := os.WriteFile(composePath, modified, 0644); err != nil {
+			return fmt.Errorf("write modified compose file: %w", err)
+		}
+		fmt.Fprintf(logFile, "Domain labels injected\n")
 	}
 
 	e.stripBindMounts(composePath, logFile)
 
-	fmt.Fprintf(logFile, "Running docker compose pull...\n")
+	fmt.Fprintf(logFile, "Pulling latest images...\n")
 	if err := e.docker.ComposePull(ctx, workDir, composePath, logFile); err != nil {
-		return fmt.Errorf("compose pull: %w", err)
+		logFile.WriteString(fmt.Sprintf("Pull warning: %v\n", err))
 	}
 
-	fmt.Fprintf(logFile, "Running docker compose up...\n")
+	fmt.Fprintf(logFile, "Creating containers...\n")
 	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
-		return fmt.Errorf("compose up: %w", err)
+		return fmt.Errorf("compose command failed: %w", err)
 	}
 
 	return nil
 }
 
-type bindMount struct {
-	hostPath   string
-	serviceName string
-	containerPath string
+func splitCommitInfo(info string) (string, string) {
+	parts := strings.SplitN(info, "\n", 2)
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	}
+	return strings.TrimSpace(info), ""
 }
 
-func (e *Engine) stripBindMounts(composePath string, logFile *os.File) {
-	data, err := os.ReadFile(composePath)
-	if err != nil {
-		return
-	}
-	var parsed map[string]interface{}
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		return
-	}
-	services, ok := parsed["services"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	var mounts []bindMount
-	modified := false
-	for svcName, svcRaw := range services {
-		svc, ok := svcRaw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		volsRaw, ok := svc["volumes"]
-		if !ok {
-			continue
-		}
-		vols, ok := volsRaw.([]interface{})
-		if !ok {
-			continue
-		}
-		var kept []interface{}
-		for _, v := range vols {
-			vStr, ok := v.(string)
-			if !ok {
-				kept = append(kept, v)
-				continue
-			}
-			parts := strings.SplitN(vStr, ":", 2)
-			if len(parts) < 2 {
-				kept = append(kept, v)
-				continue
-			}
-			source := strings.TrimSpace(parts[0])
-			if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
-				mounts = append(mounts, bindMount{
-					hostPath:      source,
-					serviceName:   svcName,
-					containerPath: strings.TrimSpace(parts[1]),
-				})
-				modified = true
-			} else {
-				kept = append(kept, v)
-			}
-		}
-		if len(kept) == 0 {
-			delete(svc, "volumes")
-		} else {
-			svc["volumes"] = kept
-		}
-	}
-	if !modified {
-		return
-	}
-	fmt.Fprintf(logFile, "Removed %d bind mount(s) from compose:\n", len(mounts))
-	for _, m := range mounts {
-		fmt.Fprintf(logFile, "  - %s -> %s (service: %s)\n", m.hostPath, m.containerPath, m.serviceName)
-	}
-	out, err := yaml.Marshal(parsed)
-	if err != nil {
-		fmt.Fprintf(logFile, "Warning: could not marshal compose: %v\n", err)
-		return
-	}
-	if err := os.WriteFile(composePath, out, 0644); err != nil {
-		fmt.Fprintf(logFile, "Warning: could not write compose: %v\n", err)
-	}
-	_ = mounts // mounts are logged but not used (containers start without bind mounts)
-}
-
-func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.Deployment, error) {
+func (e *Engine) Redeploy(ctx context.Context, app *types.Application, trigger string) (*types.Deployment, error) {
 	dep := &types.Deployment{
 		ID:            uuid.New().String(),
 		ApplicationID: app.ID,
@@ -275,31 +202,56 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 	}
 
 	logDir := filepath.Join("logs", app.ID)
-	os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, fmt.Sprintf("%s.log", dep.ID))
-	dep.LogPath = logPath
-
-	logFile, err := os.Create(logPath)
-	if err != nil {
-		return nil, fmt.Errorf("create log file: %w", err)
-	}
-	defer logFile.Close()
+	dep.LogPath = filepath.Join(logDir, fmt.Sprintf("%s.log", dep.ID))
 
 	if err := models.CreateDeployment(dep); err != nil {
 		return nil, fmt.Errorf("save deployment: %w", err)
 	}
+	models.UpdateAppStatus(app.ID, "deploying")
+
+	go e.runRedeploy(context.Background(), app, dep, trigger)
+
+	return dep, nil
+}
+
+func (e *Engine) runRedeploy(ctx context.Context, app *types.Application, dep *types.Deployment, trigger string) {
+	os.MkdirAll(filepath.Dir(dep.LogPath), 0755)
+	logFile, err := os.Create(dep.LogPath)
+	if err != nil {
+		log.Printf("create log file: %v", err)
+		dep.Status = types.StatusFailed
+		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
+		models.UpdateAppStatus(app.ID, "failed")
+		return
+	}
+	defer logFile.Close()
 
 	models.UpdateAppStatus(app.ID, "deploying")
 	fmt.Fprintf(logFile, "[%s] Redeploying %s\n", time.Now().Format(time.RFC3339), app.Name)
 
+	if err := e.redeploy(ctx, app, dep, logFile, trigger); err != nil {
+		dep.Status = types.StatusFailed
+		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
+		models.UpdateAppStatus(app.ID, "failed")
+		fmt.Fprintf(logFile, "[%s] REDEPLOY FAILED: %v\n", time.Now().Format(time.RFC3339), err)
+		return
+	}
+
+	dep.Status = types.StatusDone
+	models.UpdateDeployment(dep)
+	models.UpdateAppStatus(app.ID, "running")
+	fmt.Fprintf(logFile, "[%s] Redeploy completed\n", time.Now().Format(time.RFC3339))
+}
+
+func (e *Engine) redeploy(ctx context.Context, app *types.Application, dep *types.Deployment, logFile *os.File, trigger string) error {
 	workDir := e.workDir(app)
 
 	if app.Source == types.SourceManual {
 		composeFilePath := filepath.Join(workDir, app.ComposePath)
 		os.WriteFile(composeFilePath, []byte(app.ComposeContent), 0644)
 		fmt.Fprintf(logFile, "Compose file rewritten\n")
-		dep.CommitSHA = "manual"
-		dep.CommitMessage = "manual compose\n"
+		dep.CommitSHA = trigger
+		dep.CommitMessage = trigger + " deploy\n"
 	} else {
 		commitInfo, err := e.git.Pull(app.ID)
 		if err != nil {
@@ -318,7 +270,7 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 
 	envPath, err := e.docker.WriteEnvFile(workDir, app.EnvVars)
 	if err != nil {
-		return nil, fmt.Errorf("write env file: %w", err)
+		return fmt.Errorf("write env file: %w", err)
 	}
 
 	composePath := filepath.Join(workDir, app.ComposePath)
@@ -343,19 +295,10 @@ func (e *Engine) Redeploy(ctx context.Context, app *types.Application) (*types.D
 
 	fmt.Fprintf(logFile, "Recreating containers...\n")
 	if err := e.docker.ComposeUp(ctx, workDir, composePath, envPath, logFile); err != nil {
-		dep.Status = types.StatusFailed
-		models.UpdateDeploymentStatus(dep.ID, types.StatusFailed)
-		models.UpdateAppStatus(app.ID, "failed")
-		fmt.Fprintf(logFile, "[%s] REDEPLOY FAILED: %v\n", time.Now().Format(time.RFC3339), err)
-		return dep, fmt.Errorf("redeploy: %w", err)
+		return fmt.Errorf("compose command failed: %w", err)
 	}
 
-	dep.Status = types.StatusDone
-	models.UpdateDeployment(dep)
-	models.UpdateAppStatus(app.ID, "running")
-	fmt.Fprintf(logFile, "[%s] Redeploy completed\n", time.Now().Format(time.RFC3339))
-
-	return dep, nil
+	return nil
 }
 
 func (e *Engine) Restart(ctx context.Context, app *types.Application) error {
@@ -367,22 +310,25 @@ func (e *Engine) Restart(ctx context.Context, app *types.Application) error {
 	logPath := filepath.Join(logDir, fmt.Sprintf("restart-%d.log", time.Now().Unix()))
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("create log file: %w", err)
 	}
 	defer logFile.Close()
 
 	fmt.Fprintf(logFile, "[%s] Restarting %s\n", time.Now().Format(time.RFC3339), app.Name)
-	return e.docker.ComposeRestart(ctx, workDir, composeFile, logFile)
+	if err := e.docker.ComposeDown(ctx, workDir, composeFile, logFile); err != nil {
+		return fmt.Errorf("compose down: %w", err)
+	}
+	if err := e.docker.ComposeUp(ctx, workDir, composeFile, "", logFile); err != nil {
+		return fmt.Errorf("compose up: %w", err)
+	}
+	fmt.Fprintf(logFile, "[%s] Restart completed\n", time.Now().Format(time.RFC3339))
+	return nil
 }
 
 func (e *Engine) Stop(ctx context.Context, app *types.Application) error {
 	workDir := e.workDir(app)
 	composeFile := filepath.Join(workDir, app.ComposePath)
-
-	logDir := filepath.Join("logs", app.ID)
-	os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, fmt.Sprintf("stop-%d.log", time.Now().Unix()))
-	logFile, err := os.Create(logPath)
+	logFile, err := os.Create(filepath.Join("logs", app.ID, fmt.Sprintf("stop-%d.log", time.Now().Unix())))
 	if err != nil {
 		return err
 	}
@@ -390,46 +336,127 @@ func (e *Engine) Stop(ctx context.Context, app *types.Application) error {
 
 	fmt.Fprintf(logFile, "[%s] Stopping %s\n", time.Now().Format(time.RFC3339), app.Name)
 	if err := e.docker.ComposeDown(ctx, workDir, composeFile, logFile); err != nil {
-		return err
+		return fmt.Errorf("compose down: %w", err)
 	}
-	return models.UpdateAppStatus(app.ID, "stopped")
+	models.UpdateAppStatus(app.ID, "stopped")
+	fmt.Fprintf(logFile, "[%s] Stopped\n", time.Now().Format(time.RFC3339))
+	return nil
 }
 
 func (e *Engine) Start(ctx context.Context, app *types.Application) error {
 	workDir := e.workDir(app)
 	composeFile := filepath.Join(workDir, app.ComposePath)
-
-	logDir := filepath.Join("logs", app.ID)
-	os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, fmt.Sprintf("start-%d.log", time.Now().Unix()))
-	logFile, err := os.Create(logPath)
+	logFile, err := os.Create(filepath.Join("logs", app.ID, fmt.Sprintf("start-%d.log", time.Now().Unix())))
 	if err != nil {
 		return err
 	}
 	defer logFile.Close()
 
-	envPath, _ := e.docker.WriteEnvFile(workDir, app.EnvVars)
-
 	fmt.Fprintf(logFile, "[%s] Starting %s\n", time.Now().Format(time.RFC3339), app.Name)
-	if err := e.docker.ComposeUp(ctx, workDir, composeFile, envPath, logFile); err != nil {
-		return err
+	if err := e.docker.ComposeUp(ctx, workDir, composeFile, "", logFile); err != nil {
+		return fmt.Errorf("compose up: %w", err)
 	}
-	return models.UpdateAppStatus(app.ID, "running")
+	models.UpdateAppStatus(app.ID, "running")
+	fmt.Fprintf(logFile, "[%s] Started\n", time.Now().Format(time.RFC3339))
+	return nil
 }
 
-func splitCommitInfo(info string) []string {
-	var parts []string
-	current := ""
-	for i, c := range info {
-		if c == ':' && i < len(info)-1 {
-			parts = append(parts, current)
-			current = string(info[i+1:])
-			return parts
+func (e *Engine) stripBindMounts(composePath string, logFile *os.File) {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		logFile.WriteString(fmt.Sprintf("Warning: cannot read compose for bind mount strip: %v\n", err))
+		return
+	}
+
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		logFile.WriteString(fmt.Sprintf("Warning: cannot parse compose for bind mount strip: %v\n", err))
+		return
+	}
+
+	servicesRaw, ok := parsed["services"]
+	if !ok {
+		return
+	}
+	servicesMap, ok := servicesRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	removed := 0
+	for svcName, svcRaw := range servicesMap {
+		svc, ok := svcRaw.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		current += string(c)
+		volumesRaw, ok := svc["volumes"]
+		if !ok {
+			continue
+		}
+		volList, ok := volumesRaw.([]interface{})
+		if !ok {
+			continue
+		}
+
+		var kept []interface{}
+		for _, v := range volList {
+			switch val := v.(type) {
+			case string:
+				parts := strings.SplitN(val, ":", 2)
+				if len(parts) >= 1 && (strings.HasPrefix(parts[0], ".") || strings.HasPrefix(parts[0], "/")) {
+					logFile.WriteString(fmt.Sprintf("  - %s -> %s (service: %s)\n", parts[0], parts[1], svcName))
+					removed++
+					continue
+				}
+				kept = append(kept, v)
+			case map[string]interface{}:
+				source, _ := val["source"].(string)
+				if source != "" && (strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/")) {
+					target, _ := val["target"].(string)
+					logFile.WriteString(fmt.Sprintf("  - %s -> %s (service: %s)\n", source, target, svcName))
+					removed++
+					continue
+				}
+				kept = append(kept, v)
+			default:
+				kept = append(kept, v)
+			}
+		}
+
+		if len(kept) == 0 {
+			delete(svc, "volumes")
+		} else {
+			svc["volumes"] = kept
+		}
 	}
-	if current != "" {
-		parts = append(parts, current)
+
+	if removed == 0 {
+		return
 	}
-	return parts
+
+	logFile.WriteString(fmt.Sprintf("Removed %d bind mount(s) from compose:\n", removed))
+
+	out, err := yaml.Marshal(parsed)
+	if err != nil {
+		logFile.WriteString(fmt.Sprintf("Warning: marshal error after stripping: %v\n", err))
+		return
+	}
+
+	out = fixNullValues(out)
+
+	if err := os.WriteFile(composePath, out, 0644); err != nil {
+		logFile.WriteString(fmt.Sprintf("Warning: write error after stripping: %v\n", err))
+	}
+}
+
+func fixNullValues(in []byte) []byte {
+	s := string(in)
+	s = strings.ReplaceAll(s, ": null\n", ": {}\n")
+	s = strings.ReplaceAll(s, ": null\r\n", ": {}\n")
+	return []byte(s)
+}
+
+func (e *Engine) Build(ctx context.Context, app *types.Application) error {
+	fmt.Printf("Build not implemented yet (stub)")
+	return nil
 }

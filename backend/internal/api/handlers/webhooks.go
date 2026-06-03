@@ -74,21 +74,20 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Webhook triggered redeploy for %s (branch: %s)", app.Name, app.Branch)
 
-	dep, err := h.engine.Redeploy(context.Background(), app)
+	dep, err := h.engine.Redeploy(context.Background(), app, "webhook")
 	if err != nil {
 		log.Printf("Webhook redeploy error for %s: %v", app.Name, err)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":     "failed",
-			"deployment": dep,
 			"error":      err.Error(),
 		})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":     "deployed",
+		"status":     "deploying",
 		"deployment": dep,
 	})
 }
