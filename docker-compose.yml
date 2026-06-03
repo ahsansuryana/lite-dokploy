@@ -50,10 +50,12 @@ services:
       - lite-dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lite-dokploy.rule=Host(`${DOMAIN:-localhost}`)"
-      - "traefik.http.routers.lite-dokploy.entrypoints=websecure"
-      - "traefik.http.routers.lite-dokploy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.lite-dokploy-web.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.lite-dokploy-web.entrypoints=web"
       - "traefik.http.services.lite-dokploy.loadbalancer.server.port=3000"
+      - "traefik.http.routers.lite-dokploy-websecure.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.lite-dokploy-websecure.entrypoints=websecure"
+      - "traefik.http.routers.lite-dokploy-websecure.tls.certresolver=letsencrypt"
     depends_on:
       - traefik
 
