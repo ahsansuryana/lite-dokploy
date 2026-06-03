@@ -257,13 +257,9 @@ func (e *Engine) redeploy(ctx context.Context, app *types.Application, dep *type
 		if err != nil {
 			fmt.Fprintf(logFile, "Pull warning: %v\n", err)
 		} else {
-			parts := splitCommitInfo(commitInfo)
-			if len(parts) >= 1 {
-				dep.CommitSHA = parts[0]
-			}
-			if len(parts) >= 2 {
-				dep.CommitMessage = parts[1]
-			}
+			sha, msg := splitCommitInfo(commitInfo)
+			dep.CommitSHA = sha
+			dep.CommitMessage = msg
 			fmt.Fprintf(logFile, "Commit: %s\n", commitInfo)
 		}
 	}
