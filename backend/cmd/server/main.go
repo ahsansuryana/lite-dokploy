@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lite-dokploy/backend/internal/api"
+	"github.com/lite-dokploy/backend/internal/auth"
 	"github.com/lite-dokploy/backend/internal/database"
 	"github.com/lite-dokploy/backend/internal/deploy"
 	"github.com/lite-dokploy/backend/internal/docker"
@@ -52,8 +53,21 @@ func main() {
 		traefikManager.Enable()
 	}
 
+	authUsername := getEnv("AUTH_USERNAME", "admin")
+	authPassword := getEnv("AUTH_PASSWORD", "")
+	jwtSecret := getEnv("JWT_SECRET", "")
+
+	if authPassword == "" {
+		log.Println("WARNING: AUTH_PASSWORD not set — authentication disabled")
+	}
+
+	authManager, err := auth.NewManager(authUsername, authPassword, jwtSecret)
+	if err != nil {
+		log.Fatalf("Auth init: %v", err)
+	}
+
 	deployEngine := deploy.NewEngine(dockerManager, gitManager, traefikManager)
-	router := api.NewRouter(deployEngine, *frontendDir)
+	router := api.NewRouter(deployEngine, *frontendDir, authManager)
 
 	for _, dir := range []string{*dataDir, *repoDir, *logDir, "/deployments"} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -90,4 +104,11 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func getEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
 }

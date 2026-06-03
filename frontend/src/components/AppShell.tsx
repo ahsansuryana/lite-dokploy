@@ -2,10 +2,12 @@ import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter,
 import { Separator } from './ui/separator'
 import { ModeToggle } from './ui/mode-toggle'
 import { usePath, navigate, Link } from '../router'
-import { House, Plus, LayoutDashboard } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import { House, Plus, LayoutDashboard, LogOut } from 'lucide-react'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePath()
+  const { logout, username } = useAuth()
 
   const nav = [
     { href: '/', label: 'Applications', icon: <House size={16} /> },
@@ -35,6 +37,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
+          <div className="flex items-center justify-between px-2">
+            <span className="text-xs text-muted-foreground">{username}</span>
+            <button
+              onClick={logout}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
           <div className="px-2 text-xs text-muted-foreground">
             v0.1.0
           </div>

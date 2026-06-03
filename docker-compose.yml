@@ -40,6 +40,9 @@ services:
       - PORT=3000
       - TRAEFIK_ENABLED=true
       - DOMAIN=${DOMAIN:-}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-admin}
+      - JWT_SECRET=${JWT_SECRET:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - lite-dokploy-data:/data

@@ -2,9 +2,19 @@ import type { Application, Deployment, DashboardItem, AppDomain } from './types'
 
 const BASE = '/api'
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('token')
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
+
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(opts?.headers as Record<string, string> | undefined),
+    },
     ...opts,
   })
   if (!res.ok) {
@@ -30,7 +40,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
   deleteApp: (id: string) =>
-    fetch(`${BASE}/applications/${id}`, { method: 'DELETE' }),
+    fetch(`${BASE}/applications/${id}`, {
+      method: 'DELETE',
+      headers: { ...authHeaders() },
+    }),
 
   listDeployments: (appId: string) =>
     request<Deployment[]>(`/applications/${appId}/deployments`),
@@ -47,7 +60,9 @@ export const api = {
     request<{ status: string }>(`/applications/${id}/start`, { method: 'POST' }),
 
   getDeploymentLog: (depId: string) =>
-    fetch(`${BASE}/deployments/${depId}/logs`).then((r) => r.text()),
+    fetch(`${BASE}/deployments/${depId}/logs`, {
+      headers: { ...authHeaders() },
+    }).then((r) => r.text()),
 
   getAppLogs: (appId: string) =>
     request<{ appId: string; logFile: string; preview: string }[]>(
@@ -67,5 +82,8 @@ export const api = {
       body: JSON.stringify(data),
     }),
   deleteDomain: (appId: string, domainId: string) =>
-    fetch(`${BASE}/applications/${appId}/domains/${domainId}`, { method: 'DELETE' }),
+    fetch(`${BASE}/applications/${appId}/domains/${domainId}`, {
+      method: 'DELETE',
+      headers: { ...authHeaders() },
+    }),
 }
