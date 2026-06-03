@@ -60,14 +60,16 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
-	if refBranch != app.Branch {
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status": "skipped",
-			"reason": fmt.Sprintf("branch %s does not match app branch %s", refBranch, app.Branch),
-		})
-		return
+	if app.Branch != "" {
+		refBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+		if refBranch != app.Branch {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "skipped",
+				"reason": fmt.Sprintf("branch %s does not match app branch %s", refBranch, app.Branch),
+			})
+			return
+		}
 	}
 
 	log.Printf("Webhook triggered redeploy for %s (branch: %s)", app.Name, app.Branch)
