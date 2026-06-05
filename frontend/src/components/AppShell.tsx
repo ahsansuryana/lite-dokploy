@@ -1,13 +1,16 @@
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarGroup, SidebarItem, SidebarInset, SidebarTrigger, SidebarRail } from './ui/sidebar'
+import { SidebarContext } from './ui/sidebar'
 import { Separator } from './ui/separator'
 import { ModeToggle } from './ui/mode-toggle'
 import { usePath, navigate, Link } from '../router'
 import { useAuth } from '../context/AuthContext'
 import { House, Plus, LayoutDashboard, LogOut } from 'lucide-react'
+import { useContext } from 'react'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePath()
   const { logout, username } = useAuth()
+  const { open } = useContext(SidebarContext)
 
   const nav = [
     { href: '/', label: 'Applications', icon: <House size={16} /> },
@@ -18,10 +21,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader>
-          <div className="flex items-center gap-2">
-            <LayoutDashboard size={20} className="text-sidebar-primary" />
-            <span className="text-base font-semibold">lite-dokploy</span>
-          </div>
+          <LayoutDashboard size={20} className="text-sidebar-primary shrink-0" />
+          {open && <span className="text-base font-semibold whitespace-nowrap">lite-dokploy</span>}
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup label="Home">
@@ -37,19 +38,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
-          <div className="flex items-center justify-between px-2">
-            <span className="text-xs text-muted-foreground">{username}</span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              title="Sign out"
-            >
-              <LogOut size={14} />
-            </button>
-          </div>
-          <div className="px-2 text-xs text-muted-foreground">
-            v0.1.0
-          </div>
+          {open && (
+            <div className="flex items-center justify-between px-2">
+              <span className="text-xs text-muted-foreground truncate">{username}</span>
+              <button
+                onClick={logout}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0"
+                title="Sign out"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          )}
+          {open && (
+            <div className="px-2 text-xs text-muted-foreground">
+              v0.1.0
+            </div>
+          )}
+          {!open && (
+            <div className="flex justify-center">
+              <button
+                onClick={logout}
+                className="flex items-center justify-center text-muted-foreground hover:text-foreground p-1"
+                title="Sign out"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          )}
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>

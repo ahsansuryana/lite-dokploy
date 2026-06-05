@@ -7,7 +7,7 @@ type SidebarContextType = {
   setOpen: (v: boolean) => void
 }
 
-const SidebarContext = createContext<SidebarContextType>({ open: true, toggle: () => {}, setOpen: () => {} })
+export const SidebarContext = createContext<SidebarContextType>({ open: true, toggle: () => {}, setOpen: () => {} })
 
 export function SidebarProvider({ children, defaultOpen = true }: { children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -24,7 +24,7 @@ export function Sidebar({ children }: { children: ReactNode }) {
   const width = open ? 'var(--sidebar-width)' : 'var(--sidebar-width-icon)'
   return (
     <div
-      className="group/sidebar fixed top-0 left-0 z-50 flex h-full flex-col border-r border-sidebar-border bg-sidebar-background text-sidebar-foreground transition-[width] duration-200 ease-linear"
+      className="group/sidebar fixed top-0 left-0 z-50 flex h-full flex-col border-r border-sidebar-border bg-sidebar-background text-sidebar-foreground transition-[width] duration-200 ease-linear overflow-hidden"
       style={{ width }}
     >
       {children}
@@ -33,8 +33,12 @@ export function Sidebar({ children }: { children: ReactNode }) {
 }
 
 export function SidebarHeader({ children }: { children: ReactNode }) {
+  const { open } = useContext(SidebarContext)
   return (
-    <div className="flex items-center gap-2 px-6 py-4">
+    <div className={cn(
+      'flex items-center gap-2 py-4 transition-[padding] duration-200 ease-linear',
+      open ? 'px-6 justify-start' : 'px-0 justify-center',
+    )}>
       {children}
     </div>
   )
@@ -49,17 +53,22 @@ export function SidebarContent({ children }: { children: ReactNode }) {
 }
 
 export function SidebarFooter({ children }: { children: ReactNode }) {
+  const { open } = useContext(SidebarContext)
   return (
-    <div className="border-t border-sidebar-border p-3">
+    <div className={cn(
+      'border-t border-sidebar-border transition-[padding] duration-200 ease-linear',
+      open ? 'p-3' : 'p-1',
+    )}>
       {children}
     </div>
   )
 }
 
 export function SidebarGroup({ label, children }: { label?: string; children: ReactNode }) {
+  const { open } = useContext(SidebarContext)
   return (
     <div className="mb-4">
-      {label && (
+      {label && open && (
         <div className="mb-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {label}
         </div>
@@ -84,6 +93,7 @@ export function SidebarItem({ icon, label, active, onClick }: {
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        !open && 'justify-center px-0',
       )}
     >
       <span className="shrink-0 size-4">{icon}</span>
@@ -118,7 +128,7 @@ export function SidebarTrigger({ className }: { className?: string }) {
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="1" y="2" width="14" height="12" rx="2" />
-        <line x1="6" y1="2" x2="6" y2="14" />
+        <line x1="6" y1="2" x2="6" y2="12" />
       </svg>
     </button>
   )

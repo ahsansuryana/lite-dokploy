@@ -110,24 +110,18 @@ func UpdateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name != "" {
-		app.Name = req.Name
+	if req.Name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
 	}
+	app.Name = req.Name
 	if req.Source != "" {
 		app.Source = types.AppSource(req.Source)
 	}
-	if req.RepoURL != "" {
-		app.RepoURL = req.RepoURL
-	}
-	if req.Branch != "" {
-		app.Branch = req.Branch
-	}
-	if req.ComposePath != "" {
-		app.ComposePath = req.ComposePath
-	}
-	if req.ComposeContent != "" {
-		app.ComposeContent = req.ComposeContent
-	}
+	app.RepoURL = req.RepoURL
+	app.Branch = req.Branch
+	app.ComposePath = req.ComposePath
+	app.ComposeContent = req.ComposeContent
 	app.EnvVars = req.EnvVars
 
 	if err := models.UpdateApplication(app); err != nil {

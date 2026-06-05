@@ -1,20 +1,20 @@
 import { useSyncExternalStore } from 'react'
 
 function getPath() {
-  return window.location.hash.slice(1) || '/'
+  return window.location.pathname || '/'
 }
 
 const listeners = new Set<() => void>()
 
 function subscribe(cb: () => void) {
   listeners.add(cb)
-  const onHash = () => {
+  const onPop = () => {
     for (const fn of listeners) fn()
   }
-  window.addEventListener('hashchange', onHash)
+  window.addEventListener('popstate', onPop)
   return () => {
     listeners.delete(cb)
-    window.removeEventListener('hashchange', onHash)
+    window.removeEventListener('popstate', onPop)
   }
 }
 
@@ -23,7 +23,8 @@ export function usePath() {
 }
 
 export function navigate(path: string) {
-  window.location.hash = path
+  window.history.pushState(null, '', path)
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 export function useNavigate() {
@@ -43,7 +44,14 @@ export function Link({ href, children, className }: {
   className?: string
 }) {
   return (
-    <a href={`#${href}`} className={className}>
+    <a
+      href={href}
+      className={className}
+      onClick={(e) => {
+        e.preventDefault()
+        navigate(href)
+      }}
+    >
       {children}
     </a>
   )

@@ -1,5 +1,5 @@
 import { useAuth } from './context/AuthContext'
-import { Router } from './router'
+import { Router, usePath } from './router'
 import { AppShell } from './components/AppShell'
 import { Dashboard } from './pages/Dashboard'
 import { AppDetail } from './pages/AppDetail'
@@ -14,8 +14,21 @@ function Loading() {
   )
 }
 
+function AppDetailRoute() {
+  return <AppDetail />
+}
+
+function NotFound() {
+  return (
+    <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
+      404 — page not found
+    </div>
+  )
+}
+
 function App() {
   const { isAuthenticated, isLoading } = useAuth()
+  const path = usePath()
 
   if (isLoading) return <Loading />
   if (!isAuthenticated) return <Login />
@@ -27,13 +40,8 @@ function App() {
           '/': Dashboard,
           '/create': CreateApp,
           '*': () => {
-            const path = window.location.hash.slice(1)
-            if (path.startsWith('/app/')) return <AppDetail />
-            return (
-              <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-                404 — page not found
-              </div>
-            )
+            if (path.startsWith('/app/')) return <AppDetailRoute />
+            return <NotFound />
           },
         }}
       />

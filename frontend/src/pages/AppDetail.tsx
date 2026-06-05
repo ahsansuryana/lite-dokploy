@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { usePath, Link } from '../router'
+import { usePath, navigate, Link } from '../router'
 import type { Application, Deployment, AppDomain } from '../types'
 import { StatusBadge, StatusDot } from '../components/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card'
@@ -10,7 +10,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
 import {
   ArrowLeft, Globe, Rocket, Terminal, Copy, RefreshCw, Play, Square, RotateCcw,
-  Plus, X, Pencil, Trash2, ShieldCheck,
+  Plus, X, Pencil, Trash2, ShieldCheck, Save,
 } from 'lucide-react'
 
 export function AppDetail() {
@@ -23,6 +23,18 @@ export function AppDetail() {
   const [logDepId, setLogDepId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    source: 'manual',
+    repoUrl: '',
+    branch: '',
+    composePath: '',
+    composeContent: '',
+    envVars: '',
+  })
+
   const [showDomainForm, setShowDomainForm] = useState(false)
   const [editingDomain, setEditingDomain] = useState<AppDomain | null>(null)
   const [domainForm, setDomainForm] = useState({
@@ -102,6 +114,46 @@ export function AppDetail() {
 
   useEffect(load, [appId])
 
+  const startEditing = () => {
+    if (!app) return
+    setEditForm({
+      name: app.name,
+      source: app.source,
+      repoUrl: app.repoUrl,
+      branch: app.branch,
+      composePath: app.composePath,
+      composeContent: app.composeContent || '',
+      envVars: app.envVars,
+    })
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setIsEditing(false)
+  }
+
+  const saveEdit = async () => {
+    if (!app) return
+    setSaving(true)
+    try {
+      await api.updateApp(appId, {
+        name: editForm.name,
+        source: editForm.source,
+        repoUrl: editForm.repoUrl,
+        branch: editForm.branch,
+        composePath: editForm.composePath,
+        composeContent: editForm.composeContent,
+        envVars: editForm.envVars,
+      })
+      setIsEditing(false)
+      load()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const doAction = async (action: string, fn: () => Promise<unknown>) => {
     setActionLoading(action)
     try {
@@ -169,13 +221,50 @@ export function AppDetail() {
                 <div className="size-10 rounded-lg bg-secondary flex items-center justify-center">
                   <Globe size={18} className="text-foreground" />
                 </div>
-                {app.name}
+                {isEditing ? (
+                  <input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                    className="rounded-md border border-input bg-background px-2.5 py-1.5 text-lg font-semibold ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                ) : (
+                  app.name
+                )}
               </CardTitle>
-              <CardDescription className="mt-1">
-                {app.source === 'manual' ? 'Manual (pasted compose)' : `${app.repoUrl} · ${app.branch}`}
-              </CardDescription>
+              {!isEditing && (
+                <CardDescription className="mt-1">
+                  {app.source === 'manual' ? 'Manual (pasted compose)' : `${app.repoUrl} · ${app.branch}`}
+                </CardDescription>
+              )}
             </div>
-            <StatusBadge status={app.status} />
+            <div className="flex items-center gap-2">
+              {isEditing ? (
+                <>
+                  <Button size="sm" variant="outline" onClick={cancelEditing} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={saveEdit} disabled={saving}>
+                    {saving ? (
+                      <span className="flex items-center gap-2">
+                        <RefreshCw size={14} className="animate-spin" />
+                        Saving...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Save size={14} />
+                        Save
+                      </span>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" onClick={startEditing}>
+                  <Pencil size={14} className="mr-1" />
+                  Edit
+                </Button>
+              )}
+              <StatusBadge status={app.status} />
+            </div>
           </div>
         </CardHeader>
         <Separator />
@@ -190,30 +279,106 @@ export function AppDetail() {
                 </CardHeader>
                 <Separator />
                 <CardContent className="p-4">
-                  <dl className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground text-xs">Source</dt>
-                      <dd className="text-xs mt-0.5 capitalize">{app.source}</dd>
+                  {isEditing ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Source</label>
+                        <select
+                          value={editForm.source}
+                          onChange={(e) => setEditForm((f) => ({ ...f, source: e.target.value }))}
+                          className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <option value="manual">Manual (pasted compose)</option>
+                          <option value="git">Git Repository</option>
+                        </select>
+                      </div>
+                      {editForm.source === 'git' && (
+                        <>
+                          <div>
+                            <label className="block text-xs text-muted-foreground mb-1">Repository URL</label>
+                            <input
+                              value={editForm.repoUrl}
+                              onChange={(e) => setEditForm((f) => ({ ...f, repoUrl: e.target.value }))}
+                              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              placeholder="https://github.com/user/repo.git"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-muted-foreground mb-1">Branch</label>
+                            <input
+                              value={editForm.branch}
+                              onChange={(e) => setEditForm((f) => ({ ...f, branch: e.target.value }))}
+                              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              placeholder="main"
+                            />
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Compose Path</label>
+                        <input
+                          value={editForm.composePath}
+                          onChange={(e) => setEditForm((f) => ({ ...f, composePath: e.target.value }))}
+                          className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          placeholder="docker-compose.yml"
+                        />
+                      </div>
                     </div>
-                    {app.source !== 'manual' && (
-                    <>
-                    <div>
-                      <dt className="text-muted-foreground text-xs">Repository</dt>
-                      <dd className="font-mono text-xs mt-0.5 text-foreground">{app.repoUrl}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground text-xs">Branch</dt>
-                      <dd className="text-xs mt-0.5">{app.branch}</dd>
-                    </div>
-                    </>
-                    )}
-                    <div>
-                      <dt className="text-muted-foreground text-xs">Compose Path</dt>
-                      <dd className="font-mono text-xs mt-0.5">{app.composePath}</dd>
-                    </div>
-                  </dl>
+                  ) : (
+                    <dl className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <dt className="text-muted-foreground text-xs">Source</dt>
+                        <dd className="text-xs mt-0.5 capitalize">{app.source}</dd>
+                      </div>
+                      {app.source !== 'manual' && (
+                      <>
+                      <div>
+                        <dt className="text-muted-foreground text-xs">Repository</dt>
+                        <dd className="font-mono text-xs mt-0.5 text-foreground">{app.repoUrl}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground text-xs">Branch</dt>
+                        <dd className="text-xs mt-0.5">{app.branch}</dd>
+                      </div>
+                      </>
+                      )}
+                      <div>
+                        <dt className="text-muted-foreground text-xs">Compose Path</dt>
+                        <dd className="font-mono text-xs mt-0.5">{app.composePath}</dd>
+                      </div>
+                    </dl>
+                  )}
                 </CardContent>
               </Card>
+
+              {(isEditing || app.composeContent) && (
+                <Card>
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                      Compose File
+                    </CardTitle>
+                  </CardHeader>
+                  <Separator />
+                  <CardContent className="p-4">
+                    {isEditing ? (
+                      <textarea
+                        value={editForm.composeContent}
+                        onChange={(e) => setEditForm((f) => ({ ...f, composeContent: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        rows={20}
+                        placeholder="version: '3'
+services:
+  app:
+    image: nginx"
+                      />
+                    ) : (
+                      <pre className="text-xs font-mono text-muted-foreground bg-secondary rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
+                        {app.composeContent}
+                      </pre>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               <Card>
                 <CardHeader className="py-3 px-4">
@@ -376,7 +541,16 @@ export function AppDetail() {
                 </CardHeader>
                 <Separator />
                 <CardContent className="p-4">
-                  {app.envVars ? (
+                  {isEditing ? (
+                    <textarea
+                      value={editForm.envVars}
+                      onChange={(e) => setEditForm((f) => ({ ...f, envVars: e.target.value }))}
+                      className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      rows={8}
+                      placeholder="NODE_ENV=production
+DATABASE_URL=postgres://..."
+                    />
+                  ) : app.envVars ? (
                     <pre className="text-xs font-mono text-muted-foreground bg-secondary rounded-lg p-3 overflow-x-auto">
                       {app.envVars}
                     </pre>
@@ -482,7 +656,7 @@ export function AppDetail() {
                     onClick={async () => {
                       if (confirm('Are you sure you want to delete this application?')) {
                         await api.deleteApp(appId)
-                        window.location.hash = '#/'
+                        navigate('/')
                       }
                     }}
                   >
